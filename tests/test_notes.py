@@ -136,5 +136,17 @@ r = notes.extract({"main.xml": H}, prefer_consolidated=False)
 check([(n["no"], n["title"]) for n in r["all_notes"]] == [(1, "회사의 개요"), (2, "금융상품"), (3, "특수관계자")],
       f"H BR 문단 {[(n['no'], n['title']) for n in r['all_notes']]}")
 
+# ── I. 주석마다 칸 하나짜리 바깥 표로 감싼 원문(조이시티 2026Q3) ──
+def wrap(inner):
+    return f"<TABLE><TBODY><TR><TD>{inner}</TD></TR></TBODY></TABLE>"
+I = doc("<P>1. 일반사항 (연결)</P>" + wrap("<P>지배기업 개요</P><P>설립 2000년</P>") +
+        "<P>2. 차입금 (연결)</P>" + wrap("<P>(1) 단기차입금 내역</P>" + tbl("차입처", 4) + "<P>(2) 장기차입금</P>" + tbl("장기", 2)))
+r = notes.extract({"main.xml": I})
+by_no = {n["no"]: n for n in r["all_notes"]}
+check(len(r["all_notes"]) == 2, f"I 감싸기 표 {len(r['all_notes'])}")
+if 2 in by_no:
+    check(len(by_no[2]["tables"]) == 2 and len(by_no[2]["tables"][0]) == 5, f"I 안쪽 표 {[len(t) for t in by_no[2]['tables']]}")
+    check("단기차입금 내역" in by_no[2]["text"], "I 안쪽 문단")
+
 print("OK" if not fails else "실패:\n- " + "\n- ".join(fails))
 sys.exit(1 if fails else 0)

@@ -130,6 +130,26 @@ def _broken(tbl) -> bool:
     return False
 
 
+def _own_cells(tbl) -> list:
+    """이 표 자신의 칸(중첩 표의 칸 제외)."""
+    out = []
+    for c in tbl.iter("TD", "TH", "TE", "TU", "td", "th"):
+        owner = next((a for a in c.iterancestors() if _tag(a) == "TABLE"), None)
+        if owner is tbl:
+            out.append(c)
+    return out
+
+
+def _wrapper(tbl) -> bool:
+    """칸 하나짜리 바깥 표 안에 문단·표를 넣어 주석 본문을 감싼 형식(조이시티 2026Q3).
+    이런 표는 표로 기록하지 않고 안쪽 문단·표를 그대로 읽는다."""
+    cells = _own_cells(tbl)
+    if len(cells) != 1:
+        return False
+    c = cells[0]
+    return any(_tag(x) == "TABLE" for x in c.iterdescendants()) or len(c.findall(".//P")) >= 2
+
+
 def _in_real_table(el, broken: set) -> bool:
     return any(_tag(a) == "TABLE" and id(a) not in broken for a in el.iterancestors())
 
@@ -204,9 +224,30 @@ def _blocks(section, stop_log: list | None = None, tolerant: bool = False):
                     keep.append(a)
                     if _broken(a):
                         broken.add(id(a))
-    in_tbl = (lambda e: _in_real_table(e, broken)) if tolerant else _in_table
+    # 감싸기 표(칸 하나에 문단·표가 든 바깥 표)는 투명하게 취급
+    checked = set()
+    for el in els:
+        if _tag(el) != "TABLE" or id(el) in checked:
+            continue
+        checked.add(id(el))
+        keep.append(el)
+        if id(el) not in broken and _wrapper(el):
+            broken.add(id(el))
+    for el in els[:1]:  # 범위 시작보다 바깥에 있는 감싸기 표(깨진 구조 대비)
+        for a in el.iterancestors():
+            if _tag(a) == "TABLE" and id(a) not in checked:
+                checked.add(id(a))
+                keep.append(a)
+                if _wrapper(a):
+                    broken.add(id(a))
+    in_tbl = lambda e: _in_real_table(e, broken)
     for el in els:
         tag = _tag(el)
+        if tag in ("TD", "TH", "TE") and not in_tbl(el):
+            owner = next((a for a in el.iterancestors() if _tag(a) == "TABLE"), None)
+            if owner is not None and id(owner) in broken and el.text and el.text.strip():
+                out.append(("p", re.sub(r"\s+", " ", el.text).strip()))  # 감싸기 표 칸에 바로 쓴 글
+            continue
         if tag == "TABLE":
             if id(el) in broken:
                 continue
