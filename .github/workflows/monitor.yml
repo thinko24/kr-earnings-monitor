@@ -80,6 +80,15 @@ jobs:
           echo "mode=$MODE corp=$IN_CORP"
           if [ -n "$IN_CORP" ]; then python scripts/run.py "$MODE" --corp "$IN_CORP"; else python scripts/run.py "$MODE"; fi
 
+      - name: 공시 원문 보관(notes 모드, 3일)
+        if: inputs.mode == 'notes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart-raw
+          path: runs/raw
+          retention-days: 3
+          if-no-files-found: ignore
+
       - name: 결과 저장(commit)
         run: |
           git config user.name "github-actions[bot]"

@@ -16,6 +16,7 @@ import re
 import sys
 import traceback
 from datetime import timedelta
+from pathlib import Path
 
 import yaml
 
@@ -124,12 +125,18 @@ def notes_path(corp_code, label):
     return DATA / "notes" / f"{corp_code}_{label}.json"
 
 
-def fetch_notes(dart, c, f, log) -> dict | None:
+def fetch_notes(dart, c, f, log, keep_raw: bool = False) -> dict | None:
     """원문에서 주석을 뽑아 data/notes/{corp_code}_{label}.json에 전부 저장한다.
     Claude 작업 공간에서는 OpenDART에 접속하지 못하는 경우가 있어, 해설을 쓸 때 이 파일을 읽는다."""
     ninfo = None
     try:
         files = dart.document(f["rcept_no"])
+        if files and keep_raw:
+            # notes 모드: 원문을 runs/raw/에 남겨 Actions 아티팩트로 올림(추출 형식 점검용, 커밋 안 함)
+            for n, b in files.items():
+                out = RUNS / "raw" / f["rcept_no"] / Path(n).name
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(b)
         if files:
             ninfo = notes_mod.extract(files, prefer_consolidated=(c.get("fs_div") != "OFS"))
         else:
@@ -330,7 +337,7 @@ def main():
             if a.mode == "notes":
                 filings = periodic_filings(dart, c["corp_code"], days=400)
                 for f in filings[-1:]:
-                    ninfo = fetch_notes(dart, c, f, log)
+                    ninfo = fetch_notes(dart, c, f, log, keep_raw=True)
                     lt = c.get("latest")
                     if ninfo and lt and lt.get("label") == f["label"]:
                         lt["notes_file"] = c["notes_files"][f["label"]]

@@ -4,4 +4,5 @@ __pycache__/
 runs/notify.json
 runs/issue.md
 runs/issue_title.txt
+runs/raw/
 .DS_Store

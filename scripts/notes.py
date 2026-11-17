@@ -114,27 +114,41 @@ def _level(el) -> int:
     return 0
 
 
-def _range(title_el):
-    """title_el 다음부터 같은 수준 이상의 다음 TITLE 전까지의 요소(문서 순서)."""
+# 주석 섹션 다음에 오는 같은 수준의 목차 제목(여기서 범위를 끝낸다)
+NEXT_SECTION = re.compile(r"^\s*(?:[IVX]+\.|\d+\.\s*(?:재무제표\s*$|배당|증권의\s*발행|기타\s*재무|연결\s*재무제표\s*$))")
+
+
+def _is_section_title(el) -> bool:
+    """목차에 나오는 진짜 섹션 제목인지(TABLE-GROUP 등 안의 표 제목은 아님)."""
+    par = el.getparent()
+    return par is not None and _tag(par).startswith("SECTION")
+
+
+def _range(title_el, stop_log: list | None = None):
+    """title_el 다음부터 다음 섹션 제목 전까지의 요소(문서 순서).
+    끝: 부모가 SECTION-k(k ≤ 현재 수준)인 TITLE, 또는 「4. 재무제표」「6. 배당…」「IV.」 같은 다음 목차 제목."""
     root = title_el.getroottree().getroot()
     lv = _level(title_el) or 99
     started = False
     for el in root.iter():
-        if el is title_el:
-            started = True
-            continue
         if not started:
+            if el == title_el:
+                started = True
             continue
-        if _tag(el) == "TITLE" and (_level(el) or 0) <= lv:
-            break
+        if _tag(el) == "TITLE":
+            t = _text(el)
+            if (_is_section_title(el) and _level(el) <= lv) or NEXT_SECTION.match(t):
+                if stop_log is not None:
+                    stop_log.append({"stop": t[:40], "parent": _tag(el.getparent()), "level": _level(el)})
+                break
         yield el
 
 
-def _blocks(section):
+def _blocks(section, stop_log: list | None = None):
     """섹션(요소 또는 TITLE 요소)의 내용을 문서 순서대로 (kind, value) 목록으로. kind: p / table / title
     TITLE 요소를 넘기면 그 제목의 범위(_range)를 읽는다."""
     out = []
-    els = _range(section) if _tag(section) == "TITLE" else section.iter()
+    els = _range(section, stop_log) if _tag(section) == "TITLE" else section.iter()
     for el in els:
         tag = _tag(el)
         if tag == "TABLE":
@@ -149,6 +163,8 @@ def _blocks(section):
         elif tag in ("P", "TITLE"):
             if el is section or _in_table(el):
                 continue
+            if tag == "TITLE" and el.getparent() is section:
+                continue  # 섹션 자신의 제목
             t = _text(el)
             if t:
                 out.append(("title" if tag == "TITLE" else "p", t))
@@ -182,11 +198,11 @@ def _head(val: str, last_no: int):
     return no, sub, title
 
 
-def split_notes(section) -> list[dict]:
+def split_notes(section, stop_log: list | None = None) -> list[dict]:
     """주석 섹션을 번호별 덩어리로 나눈다. 반환: [{no,title,text:[..],tables:[..],blocks:[..]}]
     blocks는 문서 순서 그대로의 [{"p": 문단} | {"table": 행 목록}] — 어느 하위 항목의 표인지 알 수 있게"""
     chunks, cur, last_no = [], None, 0
-    for kind, val in _blocks(section):
+    for kind, val in _blocks(section, stop_log):
         if kind in ("p", "title"):
             h = _head(val, last_no)
             if h and h[1] >= 2 and cur is not None and h[0] == cur["no"]:
@@ -231,8 +247,13 @@ def extract(files: dict[str, bytes], prefer_consolidated: bool = True) -> dict:
     for p in pats:
         for r in roots:
             for s, t in _find_sections(r, p):
-                ch = split_notes(s)
-                tried.append({"section": t, "notes": len(ch)})
+                # 두 방식 중 더 많이 나뉜 쪽: ① 제목의 부모 요소 안 ② 제목부터 다음 섹션 제목 전까지(문서 순서)
+                stop = []
+                by_parent = split_notes(s.getparent()) if s.getparent() is not None else []
+                by_range = split_notes(s, stop)
+                ch = by_range if len(by_range) > len(by_parent) else by_parent
+                tried.append({"section": t, "parent": _tag(s.getparent()), "level": _level(s),
+                              "by_parent": len(by_parent), "by_range": len(by_range), "range_stop": stop[:1]})
                 if len(ch) > len(chunks):
                     sec_title, chunks = t, ch
             if chunks:
@@ -253,7 +274,9 @@ def extract(files: dict[str, bytes], prefer_consolidated: bool = True) -> dict:
         secs = list(_find_sections(r, r"매출\s*(및|과)\s*수주")) or \
                list(_find_sections(r, r"^\s*\d*\.?\s*매출\s*$|주요\s*제품.*매출"))
         if secs:
-            for kind, val in _blocks(secs[0][0]):
+            s0 = secs[0][0]
+            blocks = _blocks(s0) or (_blocks(s0.getparent()) if s0.getparent() is not None else [])
+            for kind, val in blocks:
                 if kind == "table" and len(sales_tables) < 12:
                     sales_tables.append(val)
             break
