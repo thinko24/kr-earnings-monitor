@@ -16,7 +16,9 @@ companies:
     stock_code: "101160"
     corp_code: "00580065"
     status: active
-
+  - name: 씨큐브
+    stock_code: "101240"
+    
 # 예시) 새 종목 추가
 #  - name: 삼성전자
 #  - name: 에코프로
