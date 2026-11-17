@@ -127,5 +127,14 @@ check([n["no"] for n in r["all_notes"]] == [1, 2, 3], f"G 깨진 표 안 주석 
 if len(r["all_notes"]) == 3:
     check(len(r["all_notes"][1]["tables"]) == 1 and len(r["all_notes"][1]["tables"][0]) == 4, "G 주석 안 진짜 표")
 
+# ── H. 제목과 본문 첫 줄이 <BR/>로만 나뉜 한 문단(아나패스 2026Q3) ──
+H = doc("<P><BR/>1. 회사의 개요<BR/><BR/></P><P>설립</P>"
+        "<P>2. 금융상품<BR/>2.1 당분기말과 전기말 현재 금융상품의 범주별 분류내역은 다음과 같습니다.<BR/>2.1.1 금융자산</P>" + tbl("금융", 2) +
+        "<P>3. 특수관계자<BR/>3.1 당분기말 현재 당사의 특수관계자 현황은 다음과 같으며 거래 내역은 아래와 같습니다.</P>" + tbl("특수", 3),
+        title="5. 재무제표 주석")
+r = notes.extract({"main.xml": H}, prefer_consolidated=False)
+check([(n["no"], n["title"]) for n in r["all_notes"]] == [(1, "회사의 개요"), (2, "금융상품"), (3, "특수관계자")],
+      f"H BR 문단 {[(n['no'], n['title']) for n in r['all_notes']]}")
+
 print("OK" if not fails else "실패:\n- " + "\n- ".join(fails))
 sys.exit(1 if fails else 0)

@@ -86,6 +86,30 @@ def _text(el) -> str:
     return re.sub(r"\s+", " ", "".join(el.itertext())).strip()
 
 
+def _lines(el) -> list[str]:
+    """문단을 <BR/> 단위 줄로. 제목과 본문 첫 줄이 <BR/>로만 나뉘어 한 문단에 붙은 원문이 있다
+    (예: "6. 금융상품<BR/>6.1 당분기말과 …", 아나패스 2026Q3)."""
+    parts = []
+
+    def walk(e):
+        if e.text:
+            parts.append(e.text)
+        for c in e:
+            if _tag(c) == "BR":
+                parts.append("\n")
+            else:
+                walk(c)
+            if c.tail:
+                parts.append(c.tail)
+    walk(el)
+    out = []
+    for ln in "".join(parts).split("\n"):
+        ln = re.sub(r"\s+", " ", ln).strip()
+        if ln:
+            out.append(ln)
+    return out
+
+
 def _in_table(el) -> bool:
     return any(_tag(a) == "TABLE" for a in el.iterancestors())
 
@@ -98,11 +122,11 @@ _HEADLIKE = re.compile(r"^\s*\d{1,3}(?:\s*-\s*\d{1,2})?\s*\.\s*[^\d\s.]")
 def _broken(tbl) -> bool:
     n = 0
     for p in tbl.iter("P", "p"):
-        t = _text(p)
-        if len(t) <= 70 and _HEADLIKE.match(t):
-            n += 1
-            if n >= 2:
-                return True
+        for t in _lines(p):
+            if len(t) <= 70 and _HEADLIKE.match(t):
+                n += 1
+                if n >= 2:
+                    return True
     return False
 
 
@@ -199,9 +223,13 @@ def _blocks(section, stop_log: list | None = None, tolerant: bool = False):
                 continue
             if tag == "TITLE" and el.getparent() is section:
                 continue  # 섹션 자신의 제목
-            t = _text(el)
-            if t:
-                out.append(("title" if tag == "TITLE" else "p", t))
+            if tag == "TITLE":
+                t = _text(el)
+                if t:
+                    out.append(("title", t))
+            else:
+                for t in _lines(el):
+                    out.append(("p", t))
     return out
 
 
