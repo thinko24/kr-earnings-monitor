@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "check=새 공시 점검 / sync=watchlist 반영 / backfill=과거 데이터 다시 채우기 / analyze=최신 보고서 다시 분석 / refresh=API 없이 다시 계산 / mailtest=메일 설정 확인"
+        description: "check=새 공시 점검 / sync=watchlist 반영 / backfill=과거 데이터 다시 채우기 / analyze=최신 보고서 다시 분석 / refresh=API 없이 다시 계산 / notes=최신 보고서 주석만 다시 받기(해설 유지) / mailtest=메일 설정 확인"
         type: choice
-        options: [check, sync, backfill, analyze, refresh, mailtest]
+        options: [check, sync, backfill, analyze, refresh, notes, mailtest]
         default: check
       corp:
         description: "한 종목만(회사명·종목코드·고유번호). 비우면 전체"

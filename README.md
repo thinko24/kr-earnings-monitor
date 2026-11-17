@@ -14,9 +14,10 @@ watchlist.yml              관심종목 (이름만 적어도 됨)
 index.html                 대시보드 (GitHub Pages)
 data/index.json            대시보드 목록용 요약
 data/{corp_code}.json      분기 데이터·분석
+data/notes/{corp_code}_{분기}.json  원문 재무제표 주석 전체(번호·제목·본문·표, 문서 순서)
 reports/*.html, *.pdf      상세 보고서
 scripts/
-  run.py                   진입점 (check / sync / backfill / analyze / refresh)
+  run.py                   진입점 (check / sync / backfill / analyze / refresh / notes)
   dart.py                  OpenDART API (list, fnlttSinglAcntAll, document.xml, corpCode.xml)
   financials.py            분기 단독 실적 복원
   analysis.py              위험 신호, 회귀 추정, 직전 추정 적중 점검
@@ -109,13 +110,31 @@ Claude에게 이렇게 요청하면 됩니다.
   "history": [ ...이전 latest... ],
   "signals": [...], "metrics": {...}, // 최신 분기 기준 자동 계산
   "reports": [{"period","source","html","pdf","notes_included","rcept_no"}],
-  "processed_rcept": ["접수번호", ...]
+  "processed_rcept": ["접수번호", ...],
+  "notes_files": {"2026Q3": "data/notes/00580065_2026Q3.json"}
+}
+```
+
+## data/notes/{corp_code}_{분기}.json 구조
+
+```jsonc
+{
+  "corp_code", "name", "label", "rcept_no", "report_nm", "fs_div", "extracted_at",
+  "status": "extracted|no_notes_section|no_matching_notes|parse_failed",
+  "section": "3. 연결재무제표 주석",
+  "all_notes": [{"no":17, "title":"차입금", "categories":["차입금·사채"],
+                 "text":"본문 전체", "tables":[[["구분","금액"],...]],
+                 "blocks":[{"p":"1) 단기차입금"},{"table":[...]}, ...]}],  // 문서 순서
+  "notes": [...],          // all_notes 중 분석 대상 범주에 걸린 것
+  "missing": [...],        // 못 찾은 핵심 범주
+  "sales_tables": [...],   // 사업의 내용 「매출 및 수주상황」 표
+  "diag": {"note_count", "numbers", "number_gaps", "sections_tried"}
 }
 ```
 
 ## 한계
 - 12월 결산 법인만 지원
-- 원문 XML 형식이 회사마다 조금씩 달라 일부 주석을 못 찾을 수 있음(보고서에 「찾지 못한 주석」으로 표시)
+- 원문 XML 형식이 회사마다 조금씩 달라 일부 주석을 못 찾을 수 있음(보고서에 「찾지 못한 핵심 주석」, Actions 로그에 주석 개수·번호 건너뜀으로 표시)
 - 공시 직후에는 재무제표 API 반영이 늦을 수 있음 → 이틀 뒤 실행에서 다시 시도
 - 공개 저장소이므로 관심종목과 분석 내용이 누구에게나 보입니다
 - 투자 권유가 아닌 참고 자료입니다

@@ -5,6 +5,7 @@
   python scripts/run.py backfill --corp 회사  # 과거 약 4년치 분기 데이터 다시 채우기
   python scripts/run.py analyze  --corp 회사  # 최신 정기보고서 다시 분석(이미 처리했어도)
   python scripts/run.py refresh              # API 호출 없이 신호·대시보드 색인·보고서만 다시 만들기
+  python scripts/run.py notes    --corp 회사  # 최신 정기보고서 원문 주석만 내려받아 data/notes/에 저장(해설은 그대로)
 
 --corp 에는 회사명, 종목코드, 고유번호 중 하나를 쓴다.
 """
@@ -119,6 +120,39 @@ def load_company(w: dict) -> dict:
     return c
 
 
+def notes_path(corp_code, label):
+    return DATA / "notes" / f"{corp_code}_{label}.json"
+
+
+def fetch_notes(dart, c, f, log) -> dict | None:
+    """원문에서 주석을 뽑아 data/notes/{corp_code}_{label}.json에 전부 저장한다.
+    Claude 작업 공간에서는 OpenDART에 접속하지 못하는 경우가 있어, 해설을 쓸 때 이 파일을 읽는다."""
+    ninfo = None
+    try:
+        files = dart.document(f["rcept_no"])
+        if files:
+            ninfo = notes_mod.extract(files, prefer_consolidated=(c.get("fs_div") != "OFS"))
+        else:
+            log(f"{c['name']}: 원문(document.xml)이 비어 있음 — 재무제표 숫자만으로 분석")
+    except Exception as e:
+        log(f"{c['name']}: 원문 주석 추출 실패({e}) — 재무제표 숫자만으로 분석")
+    if ninfo is None:
+        return None
+    log(f"{c['name']}: {f['label']} {notes_mod.summary(ninfo)}")
+    if ninfo["status"] != "extracted":
+        log(f"  진단: {ninfo.get('diag')}")
+    path = notes_path(c["corp_code"], f["label"])
+    save_json(path, {"corp_code": c["corp_code"], "name": c["name"], "label": f["label"],
+                     "rcept_no": f["rcept_no"], "report_nm": f.get("report_nm"), "rcept_dt": f.get("rcept_dt"),
+                     "fs_div": c.get("fs_div"), "extracted_at": iso_now(), **ninfo})
+    c.setdefault("notes_files", {})[f["label"]] = str(path.relative_to(DATA.parent))
+    return ninfo
+
+
+def load_notes(c, label) -> dict | None:
+    return load_json(notes_path(c["corp_code"], label)) if label else None
+
+
 def save_company(c):
     c["updated_at"] = iso_now()
     save_json(cpath(c["corp_code"]), c)
@@ -188,13 +222,7 @@ def process_filing(dart, c, f, log) -> dict | None:
         return None
     c["quarters"] = financials.merge_quarters(c["quarters"], qs)
 
-    ninfo = None
-    try:
-        files = dart.document(f["rcept_no"])
-        if files:
-            ninfo = notes_mod.extract(files, prefer_consolidated=(c.get("fs_div") != "OFS"))
-    except Exception as e:
-        log(f"{c['name']}: 원문 주석 추출 실패({e}) — 재무제표 숫자만으로 분석")
+    ninfo = fetch_notes(dart, c, f, log)
     events = recent_events(dart, c["corp_code"])
 
     prev = c.get("latest")
@@ -214,6 +242,9 @@ def process_filing(dart, c, f, log) -> dict | None:
         c.pop("latest_rules", None)
         shown = new
 
+    if keep_claude and ninfo:
+        prev["notes_file"] = c["notes_files"][label]
+    new["notes_file"] = c.get("notes_files", {}).get(label) if ninfo else None
     rep = report.write_report(c, new, ninfo)
     c["reports"] = [r for r in c["reports"] if r.get("html") != rep["html"]] + [rep]
     if f["rcept_no"] not in c["processed_rcept"]:
@@ -264,7 +295,7 @@ def build_index(watch):
 # ─────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["check", "sync", "backfill", "analyze", "refresh"])
+    ap.add_argument("mode", choices=["check", "sync", "backfill", "analyze", "refresh", "notes"])
     ap.add_argument("--corp", default="")
     a = ap.parse_args()
 
@@ -290,8 +321,23 @@ def main():
             if a.mode == "refresh":
                 refresh_company(c)
                 if c.get("latest"):
-                    rep = report.write_report(c, c["latest"])
+                    # 저장해 둔 주석이 있으면 보고서에 다시 넣는다(없으면 주석 발췌가 빠진 채로 덮어씀)
+                    rep = report.write_report(c, c["latest"], load_notes(c, c["latest"].get("label")))
                     c["reports"] = [r for r in c["reports"] if r.get("html") != rep["html"]] + [rep]
+                save_company(c)
+                continue
+
+            if a.mode == "notes":
+                filings = periodic_filings(dart, c["corp_code"], days=400)
+                for f in filings[-1:]:
+                    ninfo = fetch_notes(dart, c, f, log)
+                    lt = c.get("latest")
+                    if ninfo and lt and lt.get("label") == f["label"]:
+                        lt["notes_file"] = c["notes_files"][f["label"]]
+                        if lt.get("source") != "claude":
+                            lt["notes_status"], lt["notes_missing"] = ninfo["status"], ninfo["missing"]
+                        rep = report.write_report(c, lt, ninfo)
+                        c["reports"] = [r for r in c["reports"] if r.get("html") != rep["html"]] + [rep]
                 save_company(c)
                 continue
 

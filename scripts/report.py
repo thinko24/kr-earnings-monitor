@@ -160,14 +160,33 @@ def render_html(company: dict, latest: dict, notes_info: dict | None = None) -> 
 
     if notes_info and notes_info.get("notes"):
         out.append(f"<h2>주석 발췌 <span class='meta'>({esc(notes_info.get('section') or '')})</span></h2>")
+        nf = latest.get("notes_file")
+        total = (notes_info.get("diag") or {}).get("note_count")
+        if total:
+            out.append(f"<p class='small'>원문 주석 {total}개 중 아래 {len(notes_info['notes'])}개를 발췌했습니다."
+                       + (f" 본문·표 전체는 <code>{esc(nf)}</code>에 저장되어 있습니다." if nf else "") + "</p>")
         for n in notes_info["notes"]:
             out.append(f"<h3>[{esc(n['category'])}] {esc(n['title'])}</h3>")
-            if n.get("text"):
-                out.append(f"<p class='small'>{esc(n['text'][:600])}{'…' if len(n['text'])>600 else ''}</p>")
-            for t in n.get("tables", []):
-                out.append(table_html(t))
+            # 문서 순서대로(하위 항목 제목 바로 아래 그 표). 글자 2,000자·표 8개까지만 보여 줌
+            blocks = n.get("blocks") or ([{"p": n["text"]}] if n.get("text") else []) + [{"table": t} for t in n.get("tables", [])]
+            chars, tables, cut = 0, 0, False
+            for b in blocks:
+                if "p" in b:
+                    if chars >= 2000:
+                        cut = True
+                        continue
+                    t = b["p"][:2000 - chars]
+                    chars += len(b["p"])
+                    out.append(f"<p class='small'>{esc(t)}{'…' if chars > 2000 else ''}</p>")
+                elif tables < 8:
+                    out.append(table_html(b["table"], max_rows=30))
+                    tables += 1
+                else:
+                    cut = True
+            if cut:
+                out.append("<p class='small'>… 일부 생략(전체는 data/notes 파일)</p>")
         if notes_info.get("missing"):
-            out.append(f"<p class='small'>찾지 못한 주석: {esc(', '.join(notes_info['missing']))}</p>")
+            out.append(f"<p class='small'>찾지 못한 핵심 주석: {esc(', '.join(notes_info['missing']))}</p>")
     elif latest.get("notes_status") in ("needs_pdf", "not_fetched"):
         out.append("<p class='small'>주석은 이 보고서에 포함되지 않았습니다.</p>")
 
