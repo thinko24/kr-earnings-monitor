@@ -6,7 +6,7 @@
  "report_nm": "분기보고서 (2026.09)",
  "rcept_dt": "20261116",
  "fs_div": "CFS",
- "extracted_at": "2026-11-17T15:35:08+09:00",
+ "extracted_at": "2026-11-17T15:40:22+09:00",
  "status": "extracted",
  "section": "3. 연결재무제표 주석",
  "notes": [
@@ -13199,6 +13199,7 @@
     "level": 2,
     "by_parent": 23,
     "by_range": 23,
+    "by_tolerant": 0,
     "range_stop": [
      {
       "stop": "4. 재무제표",
