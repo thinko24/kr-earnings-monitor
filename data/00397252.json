@@ -137,7 +137,8 @@
    }
   ],
   "source": "claude",
-  "label": "2026Q3"
+  "label": "2026Q3",
+  "notes_file": "data/notes/00397252_2026Q3.json"
  },
  "name": "조이시티",
  "processed_rcept": [
@@ -535,7 +536,7 @@
    "rcept_no": "20261116001656",
    "analyzed_at": "2026-11-17T10:30:00+09:00",
    "source": "claude",
-   "notes_included": false,
+   "notes_included": true,
    "html": "reports/00397252_2026_3Q.html",
    "pdf": "reports/00397252_2026_3Q.pdf"
   }
@@ -622,6 +623,9 @@
   "ytd_rev_yoy": 19.8
  },
  "last_quarter": "2026Q3",
- "updated_at": "2026-11-17T14:14:17+09:00",
- "backfilled_at": "2026-11-17T14:09:07+09:00"
+ "updated_at": "2026-11-17T15:18:00+09:00",
+ "backfilled_at": "2026-11-17T14:09:07+09:00",
+ "notes_files": {
+  "2026Q3": "data/notes/00397252_2026Q3.json"
+ }
 }
