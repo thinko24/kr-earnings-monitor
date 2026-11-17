@@ -11,6 +11,7 @@ import numpy as np
 
 from common import (f1, pct, growth, ratio, parse_num, qparse, qnext, qprev_year,
                     period_text, iso_now)
+import note_rules
 
 HIGH, MID, LOW, GOOD = "high", "mid", "low", "good"
 
@@ -299,9 +300,12 @@ def signals(quarters, label, cm=None):
     bad = [q["q"] for q in q4s if q["net"] < 0 and q["net"] < q["op"] - 20]
     if len(bad) >= 2:
         add(LOW, f"4분기 결산 때 영업이익보다 순이익이 크게 낮았던 해: {', '.join(b[:4] for b in bad)} — 연말 손상 처리 패턴 주의")
+    return sort_signals(s)
+
+
+def sort_signals(s):
     order = {HIGH: 0, MID: 1, LOW: 2, GOOD: 3}
-    s.sort(key=lambda x: order[x["level"]])
-    return s
+    return sorted(s, key=lambda x: order.get(x["level"], 9))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -314,6 +318,7 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
     fc = forecast(quarters, label)
     cm = fc["cost"] if fc else None
     sig = signals(quarters, label, cm)
+    sig = sort_signals(sig + note_rules.note_signals(notes_info, quarters, label))
     acc = check_accuracy(prev_latest, quarters)
     y, qi = qparse(label)
     m = qmap(quarters)
@@ -397,13 +402,14 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
     head = f"{period_text(label)} 매출 {f1(mt['rev'])}억({pct(mt['rev_yoy'])})·영업이익 {f1(mt['op'])}억"
     if mt["op_yoy"] is not None:
         head += f"({pct(mt['op_yoy'])})"
-    top = [x["text"].split(" — ")[0] for x in sig if x["level"] in (HIGH, MID)][:2]
+    top = [x["text"].split(" — ")[0].replace("[주석] ", "주석: ") for x in sig if x["level"] in (HIGH, MID)][:2]
     head += ". " + ("; ".join(f"=={t}==" for t in top) + "." if top else "숫자상 큰 위험 신호는 없음.")
 
     checklist = []
     for x in sig:
         if x["level"] in (HIGH, MID) and "확인" in x["text"]:
-            checklist.append(x["text"].split(" — ")[-1])
+            what = x["text"].split(" — ")[0].replace("[주석] ", "")
+            checklist.append(x["text"].split(" — ")[-1] + (f"({what})" if x["text"].startswith("[주석]") else ""))
     if notes_info and notes_info.get("missing"):
         checklist.append("원문에서 찾지 못한 주석: " + ", ".join(notes_info["missing"]))
     if fc:

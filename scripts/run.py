@@ -24,6 +24,7 @@ from common import (DATA, RUNS, WATCHLIST, load_json, save_json, iso_now, now_ks
                     qlabel, qsort_key, REPRT_BY_Q)
 import analysis
 import financials
+import note_rules
 import notes as notes_mod
 import notify
 import report
@@ -269,7 +270,9 @@ def refresh_company(c):
         return
     last = sorted(c["quarters"], key=lambda q: qsort_key(q["q"]))[-1]["q"]
     fc = analysis.forecast(c["quarters"], last)
-    c["signals"] = analysis.signals(c["quarters"], last, fc["cost"] if fc else None)
+    c["signals"] = analysis.sort_signals(
+        analysis.signals(c["quarters"], last, fc["cost"] if fc else None)
+        + note_rules.note_signals(load_notes(c, last), c["quarters"], last))
     mt = analysis.metrics(c["quarters"], last)
     c["metrics"] = {k: (round(v, 1) if isinstance(v, float) else v) for k, v in mt.items()}
     c["last_quarter"] = last
