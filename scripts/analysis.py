@@ -418,8 +418,11 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
         checklist.append(f"{fc['period']} 실제 매출이 기본안 {f1(fc['base_rev'])}억 범위에 드는지")
 
     products = []
-    if notes_info and notes_info.get("sales_tables"):
-        products_note = "사업의 내용 「매출 및 수주상황」 표를 원문에서 옮겼습니다(아래 표). 규칙 기반 보고서는 품목별 다음 분기 추정을 하지 않습니다."
+    mix = note_rules.sales_mix(notes_info, quarters, label,
+                               note_rules.load_prev_year_notes(company.get("corp_code", ""), label))
+    if mix:
+        products_note = ("사업의 내용 「매출 및 수주상황」 표로 계산: " + " / ".join(note_rules.sales_summary(mix)) +
+                         ". 규칙 기반 보고서는 품목별 다음 분기 추정을 하지 않습니다.")
     else:
         products_note = "원문에서 품목별 매출 표를 찾지 못했습니다."
 

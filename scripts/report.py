@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from common import REPORTS, f1, period_text, MINUS
+from common import REPORTS, f1, pct, period_text, MINUS
 from notes import table_html
 import note_rules
 
@@ -109,6 +109,39 @@ def quarters_table(quarters, n=12) -> str:
 LEVEL_KO = {"high": "위험", "mid": "주의", "low": "참고", "info": "확인", "good": "개선"}
 
 
+def sales_mix_html(company: dict, latest: dict, notes_info: dict | None) -> str:
+    """사업의 내용 「매출 및 수주상황」 표를 원문 그대로 옮기지 않고 품목별 계산 결과로 보여 준다."""
+    label = latest.get("label")
+    try:
+        mix = note_rules.sales_mix(notes_info, company.get("quarters", []), label,
+                                   note_rules.load_prev_year_notes(company.get("corp_code", ""), label))
+    except Exception:
+        mix = None
+    if not mix:
+        return ""
+    q = mix["q"]
+    cum_h = "당기 연간" if q == 4 else f"1~{q * 3}월 누적"
+    if mix["has_yoy"]:
+        cmp_h, key = "전년 동기 대비", "yoy"
+    elif q == 4:
+        cmp_h, key = "전년 대비", "pace_chg"
+    else:
+        cmp_h, key = f"연환산(×4/{q}) vs 전년", "pace_chg"
+    out = [f"<h3>품목별 매출 계산 <span class='meta'>(사업의 내용 「매출 및 수주상황」, {esc(mix['periods'][0])})</span></h3>"]
+    out.append(f"<table><tr><th>품목</th><th>{cum_h}</th><th>비중</th><th>수출 비중</th><th>전년 연간</th>"
+               + ("" if q == 4 or mix["has_yoy"] else "<th>연환산</th>") + f"<th>{cmp_h}</th></tr>")
+    for r in mix["rows"]:
+        b = r["name"] == "합계"
+        cell = (lambda v: f"<b>{v}</b>") if b else (lambda v: v)
+        out.append(f"<tr><td>{cell(esc(r['name']))}</td><td>{cell(f1(r['cum']))}</td><td>{pct(r['share'], sign=False)}</td>"
+                   f"<td>{pct(r['export_share'], sign=False)}</td><td>{f1(r['prev_annual'])}</td>"
+                   + ("" if q == 4 or mix["has_yoy"] else f"<td>{f1(r['annualized'])}</td>")
+                   + f"<td>{cell(pct(r.get(key)))}</td></tr>")
+    out.append("</table>")
+    out.append("<ul class='small'>" + "".join(f"<li>{esc(s)}</li>" for s in note_rules.sales_summary(mix)) + "</ul>")
+    return "".join(out)
+
+
 def notes_check_html(company: dict, latest: dict, notes_info: dict | None) -> str:
     """주석 점검: 주석 원문을 옮기지 않고, 주석을 읽어 확인한 결과와 근거 주석 번호만 보여 준다."""
     if notes_info and notes_info.get("all_notes"):
@@ -179,10 +212,7 @@ def render_html(company: dict, latest: dict, notes_info: dict | None = None) -> 
         out.append("</table>")
     if latest.get("products_note"):
         out.append(f"<p class='small'>{esc(latest['products_note'])}</p>")
-    if notes_info and notes_info.get("sales_tables"):
-        out.append("<h3>원문: 매출 및 수주상황</h3>")
-        for t in notes_info["sales_tables"]:
-            out.append(table_html(t))
+    out.append(sales_mix_html(company, latest, notes_info))
 
     if latest.get("checklist"):
         out.append("<h2>다음에 확인할 것</h2><ul>" + "".join(f"<li>{esc(c)}</li>" for c in latest["checklist"]) + "</ul>")

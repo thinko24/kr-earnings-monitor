@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 
-from common import f1
+from common import DATA, f1, pct
 
 HIGH, MID, LOW, INFO = "high", "mid", "low", "info"
 
@@ -307,4 +307,146 @@ def answer_signals(sig: list, findings: list) -> list:
                 ans += " → 실제 거래에서 난 손익이 큼"
             x = x | {"text": t.split(" — ")[0] + " — " + ans}
         out.append(x)
+    return out
+
+
+# ── 사업의 내용 「매출 및 수주상황」 표 → 품목별 계산 결과 ─────────────
+PERIOD_HEAD = re.compile(r"제\s*\d+\s*기")
+KIND = re.compile(r"^(내\s*수|수\s*출|합\s*계|소\s*계|계)$")
+
+
+def _clean(s: str) -> str:
+    return re.sub(r"\s+", "", s or "")
+
+
+def _name(s: str) -> str:
+    """"기 타", "합   계"처럼 글자마다 띄운 이름은 붙이고, 나머지는 공백 하나로."""
+    toks = s.split()
+    return "".join(toks) if toks and all(len(t) == 1 for t in toks) else " ".join(toks)
+
+
+def parse_sales(tables: list) -> dict | None:
+    """「매출실적」 표를 품목별 {이름: {"total": [기간별], "export": [기간별]}}로. 기간 순서는 표 머리행 순서
+    (보통 당기 누적, 전기 연간, 전전기 연간). 단위는 억 원."""
+    recent_units = []
+    for t in tables:
+        txt = [" ".join(r) for r in t[:2]]
+        if len(t) <= 2 and any("단위" in x for x in txt):
+            recent_units = txt
+            continue
+        hi = next((i for i, r in enumerate(t) if sum(bool(PERIOD_HEAD.search(c)) for c in r) >= 2), None)
+        if hi is None:
+            continue
+        periods = [c for c in t[hi] if PERIOD_HEAD.search(c)]
+        k = len(periods)
+        div = unit_div([" ".join(r) for r in t[:hi + 1]] + recent_units)
+        items, order, cur = {}, [], None
+        for r in t[hi + 1:]:
+            if len(r) < k + 1:
+                continue
+            tail = r[-k:]
+            if not all(num(c) is not None or c.strip() in ("-", "—", "") for c in tail):
+                continue
+            vals = [(num(c) or 0.0) / div for c in tail]
+            text = [c for c in r[:-k] if c.strip()]
+            kind = "합계"
+            if text and KIND.match(_clean(text[-1])):
+                kind = {"내수": "domestic", "수출": "export"}.get(_clean(text[-1]), "total")
+                text = text[:-1]
+            else:
+                kind = "total"
+            if text:
+                name = text[-1].strip()
+                cur = "합계" if KIND.match(_clean(name)) else _name(name)
+            if cur is None:
+                continue
+            it = items.setdefault(cur, {})
+            if cur not in order:
+                order.append(cur)
+            it[kind] = vals
+        if not items:
+            continue
+        for it in items.values():
+            if "total" not in it and ("domestic" in it or "export" in it):
+                d, e = it.get("domestic", [0.0] * k), it.get("export", [0.0] * k)
+                it["total"] = [a + b for a, b in zip(d, e)]
+        return {"periods": periods, "items": {n: items[n] for n in order if "total" in items[n]}}
+    return None
+
+
+def load_prev_year_notes(corp_code: str, label: str) -> dict | None:
+    """작년 같은 분기 주석 파일(있으면 품목별 진짜 전년 동기 비교에 씀)."""
+    import json
+    if not label or len(label) < 6:
+        return None
+    p = DATA / "notes" / f"{corp_code}_{int(label[:4]) - 1}{label[4:]}.json"
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+    except Exception:
+        return None
+
+
+def sales_mix(info: dict | None, quarters: list, label: str, prev_info: dict | None = None) -> dict | None:
+    """품목별 매출 계산: 비중·수출 비중·연환산 vs 전년 연간·(있으면) 전년 동기 대비, 재무제표 매출과 대조."""
+    if not info or not info.get("sales_tables"):
+        return None
+    ps = parse_sales(info["sales_tables"])
+    if not ps:
+        return None
+    q = int(label[-1]) if label and label[-1].isdigit() else 4
+    items = ps["items"]
+    total_row = items.get("합계")
+    names = [n for n in items if n != "합계"]
+    cum_total = total_row["total"][0] if total_row else sum(items[n]["total"][0] for n in names)
+    prev_ps = parse_sales(prev_info["sales_tables"]) if prev_info and prev_info.get("sales_tables") else None
+    rows = []
+    for n in names + (["합계"] if total_row else []):
+        tv = items[n]["total"]
+        if n != "합계" and all(abs(v) < 0.05 for v in tv[:2]):
+            continue  # 당기·전년 모두 매출 없는 품목(예: 단종)
+        cum = tv[0]
+        prev_annual = tv[1] if len(tv) > 1 else None
+        annualized = cum * 4 / q
+        r = {"name": n, "cum": cum,
+             "share": cum / cum_total * 100 if cum_total else None,
+             "export_share": items[n]["export"][0] / cum * 100 if "export" in items[n] and cum else None,
+             "prev_annual": prev_annual,
+             "annualized": annualized,
+             "pace_chg": (annualized / prev_annual - 1) * 100 if prev_annual else None,
+             "yoy": None}
+        if prev_ps and n in prev_ps["items"]:
+            pv = prev_ps["items"][n]["total"][0]
+            r["yoy"] = (cum / pv - 1) * 100 if pv else None
+        rows.append(r)
+    ytd = _ytd_rev(quarters, label)
+    check = None
+    if ytd and cum_total:
+        diff = (cum_total / ytd - 1) * 100
+        check = (f"품목 합계 {f1(cum_total)}억 = 재무제표 누적 매출 {f1(ytd)}억과 일치" if abs(diff) <= 2 else
+                 f"품목 합계 {f1(cum_total)}억 vs 재무제표 누적 매출 {f1(ytd)}억({pct(diff)}) — 연결·별도 기준 또는 내부거래 차이 확인")
+    return {"periods": ps["periods"], "q": q, "rows": rows, "check": check, "has_yoy": prev_ps is not None}
+
+
+def sales_summary(mix: dict | None) -> list[str]:
+    """품목별 계산 결과를 한 줄씩."""
+    if not mix:
+        return []
+    rows = [r for r in mix["rows"] if r["name"] != "합계"]
+    out = []
+    if mix.get("check"):
+        out.append(mix["check"])
+    if rows:
+        top = max(rows, key=lambda r: r["cum"])
+        out.append(f"최대 품목 {top['name']} {f1(top['cum'])}억(비중 {top['share']:.1f}%)" +
+                   (f", 수출 비중 {top['export_share']:.1f}%" if top.get("export_share") is not None else ""))
+    key = "yoy" if mix.get("has_yoy") else "pace_chg"
+    basis = "전년 동기 대비" if mix.get("has_yoy") else f"같은 속도 연간 환산(×4/{mix['q']}) vs 전년 연간"
+    movers = sorted([r for r in rows if r.get(key) is not None and r["cum"] >= 1], key=lambda r: r[key])
+    if movers:
+        lo, hi = movers[0], movers[-1]
+        out.append(f"{basis}: 가장 줄어든 품목 {lo['name']} {pct(lo[key])}" +
+                   (f", 가장 늘어난 품목 {hi['name']} {pct(hi[key])}" if hi is not lo else ""))
+    tot = next((r for r in mix["rows"] if r["name"] == "합계"), None)
+    if tot and tot.get(key) is not None:
+        out.append(f"전체 {basis} {pct(tot[key])}" + ("" if mix.get("has_yoy") else " — 계절성 무시한 단순 환산"))
     return out
