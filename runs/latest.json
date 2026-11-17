@@ -1,8 +1,12 @@
 {
- "at": "2026-11-17T17:39:11+09:00",
- "mode": "refresh",
- "processed": 0,
+ "at": "2026-11-18T08:52:20+09:00",
+ "mode": "sync",
+ "processed": 1,
  "errors": [],
- "log": [],
- "api_calls": 0
+ "log": [
+  "씨큐브: 과거 데이터 19개 분기 저장(OFS)",
+  "씨큐브: 2026Q3 주석 extracted: 32개 중 대상 24개",
+  "씨큐브: 2026 3Q 분석 완료(주석 extracted)"
+ ],
+ "api_calls": 30
 }
