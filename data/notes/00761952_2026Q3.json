@@ -6,7 +6,7 @@
  "report_nm": "분기보고서 (2026.09)",
  "rcept_dt": "20261116",
  "fs_div": "OFS",
- "extracted_at": "2026-11-17T15:29:40+09:00",
+ "extracted_at": "2026-11-17T15:34:57+09:00",
  "status": "no_matching_notes",
  "section": null,
  "notes": [],
@@ -26,11 +26,31 @@
   "sections_tried": [
    {
     "section": "5. 재무제표 주석",
-    "notes": 0
+    "parent": "SECTION-2",
+    "level": 2,
+    "by_parent": 0,
+    "by_range": 0,
+    "range_stop": [
+     {
+      "stop": "6. 배당에 관한 사항",
+      "parent": "SECTION-2",
+      "level": 2
+     }
+    ]
    },
    {
     "section": "3. 연결재무제표 주석",
-    "notes": 0
+    "parent": "SECTION-2",
+    "level": 2,
+    "by_parent": 0,
+    "by_range": 0,
+    "range_stop": [
+     {
+      "stop": "4. 재무제표",
+      "parent": "SECTION-2",
+      "level": 2
+     }
+    ]
    }
   ],
   "note_count": 0,
