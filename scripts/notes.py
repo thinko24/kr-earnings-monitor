@@ -90,6 +90,26 @@ def _in_table(el) -> bool:
     return any(_tag(a) == "TABLE" for a in el.iterancestors())
 
 
+# 원문 XML에 닫히지 않은 표가 있으면 lxml recover 모드가 뒤쪽 내용 전체를 그 표 안에 넣는다(아나패스 2026Q3).
+# 안에 주석 제목 문단이 들어 있는 표는 "깨진 표"로 보고, 표로 기록하지 않고 안의 문단을 일반 문단으로 읽는다.
+_HEADLIKE = re.compile(r"^\s*\d{1,3}(?:\s*-\s*\d{1,2})?\s*\.\s*[^\d\s.]")
+
+
+def _broken(tbl) -> bool:
+    n = 0
+    for p in tbl.iter("P", "p"):
+        t = _text(p)
+        if len(t) <= 70 and _HEADLIKE.match(t):
+            n += 1
+            if n >= 2:
+                return True
+    return False
+
+
+def _in_real_table(el, broken: set) -> bool:
+    return any(_tag(a) == "TABLE" and id(a) not in broken for a in el.iterancestors())
+
+
 def _table_rows(tbl) -> list[list[str]]:
     """이 표의 행만(안쪽에 중첩된 표의 행은 제외)."""
     rows = []
@@ -144,15 +164,29 @@ def _range(title_el, stop_log: list | None = None):
         yield el
 
 
-def _blocks(section, stop_log: list | None = None):
+def _blocks(section, stop_log: list | None = None, tolerant: bool = False):
     """섹션(요소 또는 TITLE 요소)의 내용을 문서 순서대로 (kind, value) 목록으로. kind: p / table / title
     TITLE 요소를 넘기면 그 제목의 범위(_range)를 읽는다."""
     out = []
-    els = _range(section, stop_log) if _tag(section) == "TITLE" else section.iter()
+    els = list(_range(section, stop_log) if _tag(section) == "TITLE" else section.iter())
+    broken: set = set()
+    keep = []  # 깨진 표 객체를 살려 두어 id 재사용을 막음
+    if tolerant:
+        seen = set()
+        for el in els:
+            for a in [el, *el.iterancestors()]:
+                if _tag(a) == "TABLE" and id(a) not in seen:
+                    seen.add(id(a))
+                    keep.append(a)
+                    if _broken(a):
+                        broken.add(id(a))
+    in_tbl = (lambda e: _in_real_table(e, broken)) if tolerant else _in_table
     for el in els:
         tag = _tag(el)
         if tag == "TABLE":
-            if _in_table(el):
+            if id(el) in broken:
+                continue
+            if in_tbl(el):
                 continue  # 중첩 표는 바깥 표 하나로만 기록
             rows = _table_rows(el)
             # 칸 하나짜리 표에 주석 제목만 있는 경우 → 제목 후보
@@ -161,7 +195,7 @@ def _blocks(section, stop_log: list | None = None):
             elif rows:
                 out.append(("table", rows))
         elif tag in ("P", "TITLE"):
-            if el is section or _in_table(el):
+            if el is section or in_tbl(el):
                 continue
             if tag == "TITLE" and el.getparent() is section:
                 continue  # 섹션 자신의 제목
@@ -198,11 +232,11 @@ def _head(val: str, last_no: int):
     return no, sub, title
 
 
-def split_notes(section, stop_log: list | None = None) -> list[dict]:
+def split_notes(section, stop_log: list | None = None, tolerant: bool = False) -> list[dict]:
     """주석 섹션을 번호별 덩어리로 나눈다. 반환: [{no,title,text:[..],tables:[..],blocks:[..]}]
     blocks는 문서 순서 그대로의 [{"p": 문단} | {"table": 행 목록}] — 어느 하위 항목의 표인지 알 수 있게"""
     chunks, cur, last_no = [], None, 0
-    for kind, val in _blocks(section, stop_log):
+    for kind, val in _blocks(section, stop_log, tolerant):
         if kind in ("p", "title"):
             h = _head(val, last_no)
             if h and h[1] >= 2 and cur is not None and h[0] == cur["no"]:
@@ -248,12 +282,15 @@ def extract(files: dict[str, bytes], prefer_consolidated: bool = True) -> dict:
         for r in roots:
             for s, t in _find_sections(r, p):
                 # 두 방식 중 더 많이 나뉜 쪽: ① 제목의 부모 요소 안 ② 제목부터 다음 섹션 제목 전까지(문서 순서)
+                # ③ ②에서 깨진 표(안에 주석 제목이 든 표)를 풀어 읽기
                 stop = []
                 by_parent = split_notes(s.getparent()) if s.getparent() is not None else []
                 by_range = split_notes(s, stop)
-                ch = by_range if len(by_range) > len(by_parent) else by_parent
+                by_tol = split_notes(s, None, tolerant=True) if len(by_range) < 3 else []
+                ch = max((by_parent, by_range, by_tol), key=len)
                 tried.append({"section": t, "parent": _tag(s.getparent()), "level": _level(s),
-                              "by_parent": len(by_parent), "by_range": len(by_range), "range_stop": stop[:1]})
+                              "by_parent": len(by_parent), "by_range": len(by_range), "by_tolerant": len(by_tol),
+                              "range_stop": stop[:1]})
                 if len(ch) > len(chunks):
                     sec_title, chunks = t, ch
             if chunks:
@@ -298,6 +335,13 @@ def extract(files: dict[str, bytes], prefer_consolidated: bool = True) -> dict:
                 if len(short) >= 30:
                     break
         diag["short_numbered_paragraphs"] = short
+        for r in roots[:1]:
+            for el in r.iter("P"):
+                t = _text(el)
+                if t and len(t) <= HEAD_MAX_LEN and re.match(r"^\s*1\s*\.\s*(회사의\s*개요|일반\s*사항)", t):
+                    diag.setdefault("head_paths", []).append(
+                        ">".join(_tag(a) for a in reversed(list(el.iterancestors())))[-200:] + f" | {t}")
+            diag["head_paths"] = diag.get("head_paths", [])[:6]
     status = "extracted" if all_notes else ("no_notes_section" if not tried else "no_matching_notes")
     return {"status": status, "section": sec_title, "notes": notes, "all_notes": all_notes,
             "sales_tables": sales_tables, "missing": missing, "diag": diag}

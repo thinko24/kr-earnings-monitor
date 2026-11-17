@@ -115,5 +115,17 @@ check([n["no"] for n in r["all_notes"]] == list(range(1, 11)), f"F 번호 {[n['n
 check(9 in by_no and by_no[9]["title"] == "차입금 (연결)" and len(by_no[9]["tables"]) == 2, "F 9-1·9-2 차입금 합치기")
 check("차입금·사채" not in r["missing"], "F 차입금 범주")
 
+# ── G. 앞쪽 표가 닫히지 않아 주석 전체가 그 표 안에 들어간 원문(recover 모드) ──
+G = ('<?xml version="1.0" encoding="utf-8"?><DOCUMENT><BODY><SECTION-1><TITLE>III. 재무에 관한 사항</TITLE>'
+     '<SECTION-2><TITLE>4. 재무제표</TITLE><TABLE><TBODY><TR><TD>자산</TD><TD>100</TD></TR>'   # </TABLE> 없음
+     '<SECTION-2><TITLE>5. 재무제표 주석</TITLE>'
+     f'<P>1. 회사의 개요</P><P>설립</P><P>2. 매출채권</P>{tbl("대손", 3)}<P>3. 차입금</P>{tbl("차입", 2)}'
+     '</SECTION-2><SECTION-2><TITLE>6. 배당에 관한 사항</TITLE></SECTION-2>'
+     '</SECTION-1></BODY></DOCUMENT>').encode("utf-8")
+r = notes.extract({"main.xml": G}, prefer_consolidated=False)
+check([n["no"] for n in r["all_notes"]] == [1, 2, 3], f"G 깨진 표 안 주석 {[n['no'] for n in r['all_notes']]} {r['diag'].get('sections_tried')}")
+if len(r["all_notes"]) == 3:
+    check(len(r["all_notes"][1]["tables"]) == 1 and len(r["all_notes"][1]["tables"][0]) == 4, "G 주석 안 진짜 표")
+
 print("OK" if not fails else "실패:\n- " + "\n- ".join(fails))
 sys.exit(1 if fails else 0)
