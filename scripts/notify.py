@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html
 import os
+import re
 import smtplib
 import sys
 from email.mime.multipart import MIMEMultipart
@@ -16,6 +17,14 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 
 from common import RUNS, load_json
+
+def mark_html(t):
+    return re.sub(r"==(.+?)==", r"<mark style='background:#fff3b0'>\1</mark>", html.escape(t))
+
+
+def mark_md(t):
+    return re.sub(r"==(.+?)==", r"**\1**", t)
+
 
 LEVEL = {"high": "🔴", "mid": "🟠", "low": "⚪", "good": "🟢"}
 
@@ -32,7 +41,7 @@ def build_markdown(items: list[dict], errors: list[str]) -> tuple[str, str]:
     lines = []
     for i in items:
         lines.append(f"### {i['name']} — {i['period']} ({i['report_name']})")
-        lines.append(i["headline"])
+        lines.append(mark_md(i["headline"]))
         lines.append("")
         for s in i.get("signals", [])[:5]:
             lines.append(f"- {LEVEL.get(s['level'], '')} {s['text']}")
@@ -60,7 +69,7 @@ def build_html(items: list[dict], errors: list[str]) -> str:
     for i in items:
         parts.append(f"<h3 style='margin:18px 0 4px'>{html.escape(i['name'])} — {html.escape(i['period'])}</h3>")
         parts.append(f"<div style='color:#5b6570;font-size:12px'>{html.escape(i['report_name'])} · 접수 {html.escape(i.get('rcept_dt',''))}</div>")
-        parts.append(f"<p style='background:#f4f7ff;border-left:4px solid #1f4fd8;padding:8px 10px'>{html.escape(i['headline'])}</p>")
+        parts.append(f"<p style='background:#f4f7ff;border-left:4px solid #1f4fd8;padding:8px 10px'>{mark_html(i['headline'])}</p>")
         for s in i.get("signals", [])[:6]:
             parts.append(f"<div style='background:{color.get(s['level'],'#fff')};padding:4px 8px;margin:3px 0;border-radius:4px;font-size:13px'>{html.escape(s['text'])}</div>")
         links = []
@@ -119,7 +128,7 @@ def main():
         print("알릴 내용 없음")
         return
     title, md = data["title"], data["markdown"]
-    send_mail(title, build_html(data["items"], data["errors"]), md)
+    send_mail(title, build_html(data["items"], data["errors"]), md.replace("**", ""))
 
 
 if __name__ == "__main__":

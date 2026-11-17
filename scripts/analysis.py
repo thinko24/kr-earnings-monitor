@@ -318,10 +318,20 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
     y, qi = qparse(label)
     m = qmap(quarters)
 
+    def hl(text, cond):
+        return f"=={text}==" if cond else text
+
+    big_yoy = mt["rev_yoy"] is not None and abs(mt["rev_yoy"]) >= 20
+    op_neg = (mt["op"] or 0) < 0
+    cr_bad = mt["cur_ratio"] is not None and (mt["cur_ratio"] < 100 or (mt["cur_ratio_prev"] or 0) - mt["cur_ratio"] >= 20)
+    st_bad = bool(mt["stdebt"] and mt["cash"] is not None and mt["stdebt"] > max(mt["cash"] * 2, mt["cash"] + 50))
+    ocf_bad = mt["ocf_ytd"] is not None and mt["ocf_ytd"] < 0
+    nonop_big = mt["nonop"] is not None and mt["op"] is not None and abs(mt["nonop"]) >= max(abs(mt["op"]) * 0.5, 10)
+
     # Ⅰ 손익
     s1 = [
-        f"{period_text(label)} 매출 {f1(mt['rev'])}억: 전년 동기 대비 {pct(mt['rev_yoy'])}, 직전 분기 대비 {pct(mt['rev_qoq'])}",
-        f"영업이익 {f1(mt['op'])}억(영업이익률 {pct(mt['opm'], sign=False)}, 전년 동기 {pct(mt['opm_ly'], sign=False)}), 순이익 {f1(mt['net'])}억",
+        f"{period_text(label)} 매출 {f1(mt['rev'])}억: " + hl(f"전년 동기 대비 {pct(mt['rev_yoy'])}", big_yoy) + f", 직전 분기 대비 {pct(mt['rev_qoq'])}",
+        hl(f"영업이익 {f1(mt['op'])}억", op_neg) + f"(영업이익률 {pct(mt['opm'], sign=False)}, 전년 동기 {pct(mt['opm_ly'], sign=False)}), 순이익 {f1(mt['net'])}억",
     ]
     if qi > 1 and mt["ytd_rev"] is not None:
         s1.append(f"1~{qi*3}월 누적 매출 {f1(mt['ytd_rev'])}억({pct(mt['ytd_rev_yoy'])}), 누적 영업이익 {f1(mt['ytd_op'])}억(전년 {f1(mt['ytd_op_ly'])}억)")
@@ -332,7 +342,7 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
     # Ⅱ 영업외·세금
     s2 = []
     if mt["nonop"] is not None:
-        s2.append(f"영업외 손익(세전 − 영업이익) {f1(mt['nonop'], sign=True)}억: 영업이익 {f1(mt['op'])}억 → 세전 {f1(mt['pretax'])}억")
+        s2.append(hl(f"영업외 손익(세전 − 영업이익) {f1(mt['nonop'], sign=True)}억", nonop_big) + f": 영업이익 {f1(mt['op'])}억 → 세전 {f1(mt['pretax'])}억")
     if mt["tax"] is not None:
         eff = ratio(mt["tax"], mt["pretax"]) if (mt["pretax"] or 0) > 0 else None
         s2.append(f"법인세 등 {f1(mt['tax'])}억" + (f"(유효세율 {eff:.1f}%)" if eff is not None else ""))
@@ -341,11 +351,11 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
     # Ⅲ 재무상태
     s3 = []
     if mt["cur_ratio"] is not None:
-        s3.append(f"유동비율 {mt['cur_ratio']:.1f}%(직전 분기 {pct(mt['cur_ratio_prev'], sign=False)}), 부채비율 {pct(mt['debt_ratio'], sign=False)}(직전 {pct(mt['debt_ratio_prev'], sign=False)})")
+        s3.append(hl(f"유동비율 {mt['cur_ratio']:.1f}%(직전 분기 {pct(mt['cur_ratio_prev'], sign=False)})", cr_bad) + f", 부채비율 {pct(mt['debt_ratio'], sign=False)}(직전 {pct(mt['debt_ratio_prev'], sign=False)})")
     if mt["cash"] is not None:
         line = f"현금 {f1(mt['cash'])}억(직전 분기 {f1(mt['cash_prev'])}억)"
         if mt["stdebt"]:
-            line += f", 1년 내 만기 차입금 {f1(mt['stdebt'])}억"
+            line += ", " + hl(f"1년 내 만기 차입금 {f1(mt['stdebt'])}억", st_bad)
         s3.append(line)
     if mt["eq"] is not None:
         s3.append(f"자본총계 {f1(mt['eq'])}억(직전 분기 {f1(mt['eq_prev'])}억)")
@@ -353,7 +363,7 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
     # Ⅳ 현금흐름
     s4 = []
     if mt["ocf_ytd"] is not None:
-        s4.append(f"1~{qi*3}월 영업활동현금흐름 {f1(mt['ocf_ytd'])}억(전년 동기 {f1(mt['ocf_ytd_ly'])}억) vs 누적 영업이익 {f1(mt['ytd_op'])}억")
+        s4.append(hl(f"1~{qi*3}월 영업활동현금흐름 {f1(mt['ocf_ytd'])}억", ocf_bad) + f"(전년 동기 {f1(mt['ocf_ytd_ly'])}억) vs 누적 영업이익 {f1(mt['ytd_op'])}억")
     else:
         s4.append("현금흐름표 영업활동 항목을 찾지 못함")
 
@@ -388,7 +398,7 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
     if mt["op_yoy"] is not None:
         head += f"({pct(mt['op_yoy'])})"
     top = [x["text"].split(" — ")[0] for x in sig if x["level"] in (HIGH, MID)][:2]
-    head += ". " + ("; ".join(top) + "." if top else "숫자상 큰 위험 신호는 없음.")
+    head += ". " + ("; ".join(f"=={t}==" for t in top) + "." if top else "숫자상 큰 위험 신호는 없음.")
 
     checklist = []
     for x in sig:
