@@ -270,9 +270,12 @@ def refresh_company(c):
         return
     last = sorted(c["quarters"], key=lambda q: qsort_key(q["q"]))[-1]["q"]
     fc = analysis.forecast(c["quarters"], last)
+    ninfo = load_notes(c, last)
+    findings = note_rules.note_findings(ninfo, c["quarters"], last)
     c["signals"] = analysis.sort_signals(
-        analysis.signals(c["quarters"], last, fc["cost"] if fc else None)
-        + note_rules.note_signals(load_notes(c, last), c["quarters"], last))
+        note_rules.answer_signals(analysis.signals(c["quarters"], last, fc["cost"] if fc else None), findings)
+        + note_rules.note_signals(ninfo, c["quarters"], last, findings))
+    c["note_findings"] = note_rules.public(findings)
     mt = analysis.metrics(c["quarters"], last)
     c["metrics"] = {k: (round(v, 1) if isinstance(v, float) else v) for k, v in mt.items()}
     c["last_quarter"] = last
@@ -331,7 +334,7 @@ def main():
             if a.mode == "refresh":
                 refresh_company(c)
                 if c.get("latest"):
-                    # 저장해 둔 주석이 있으면 보고서에 다시 넣는다(없으면 주석 발췌가 빠진 채로 덮어씀)
+                    # 저장해 둔 주석이 있으면 다시 읽어 「주석 점검」을 만든다(없으면 점검이 빠진 채로 덮어씀)
                     rep = report.write_report(c, c["latest"], load_notes(c, c["latest"].get("label")))
                     c["reports"] = [r for r in c["reports"] if r.get("html") != rep["html"]] + [rep]
                 save_company(c)

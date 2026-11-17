@@ -182,7 +182,7 @@ async function showDetail(id){
   h += `<div class="tabs" style="margin-top:12px">${tabs.map((t,i)=>`<button class="btn ${i?'':'on'}" data-t="${t[0]}">${esc(t[1])}</button>`).join('')}</div><div id="body"></div>`;
   h += '<h3>분기 추이 (억 원)</h3>' + chart(c.quarters||[]) + qtable(c.quarters||[]);
   const reps = (c.reports||[]).slice().reverse();
-  if(reps.length) h += '<h3>보고서</h3><ul>' + reps.map(r=>`<li>${esc(r.period)} · ${r.source==='claude'?'Claude 해설':'규칙 기반'}${r.notes_included?' · 주석 포함':''}
+  if(reps.length) h += '<h3>보고서</h3><ul>' + reps.map(r=>`<li>${esc(r.period)} · ${r.source==='claude'?'Claude 해설':'규칙 기반'}${r.notes_included?' · 주석 점검':''}
      ${r.pdf?` · <a href="${r.pdf}" target="_blank">PDF</a>`:''}${r.html?` · <a href="${r.html}" target="_blank">웹 보기</a>`:''}${r.note?` <span class="small">(${esc(r.note)})</span>`:''}</li>`).join('') + '</ul>';
   h += '</div>';
   app.innerHTML = h;

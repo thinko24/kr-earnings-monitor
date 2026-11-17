@@ -317,8 +317,10 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
     mt = metrics(quarters, label)
     fc = forecast(quarters, label)
     cm = fc["cost"] if fc else None
-    sig = signals(quarters, label, cm)
-    sig = sort_signals(sig + note_rules.note_signals(notes_info, quarters, label))
+    # 주석을 읽어 확인한 결과: 숫자 규칙의 "주석 확인" 질문에 답하고, 주석 경고를 신호에 더함
+    findings = note_rules.note_findings(notes_info, quarters, label)
+    sig = sort_signals(note_rules.answer_signals(signals(quarters, label, cm), findings)
+                       + note_rules.note_signals(notes_info, quarters, label, findings))
     acc = check_accuracy(prev_latest, quarters)
     y, qi = qparse(label)
     m = qmap(quarters)
@@ -417,7 +419,7 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
 
     products = []
     if notes_info and notes_info.get("sales_tables"):
-        products_note = "사업의 내용 「매출 및 수주상황」 표를 원문에서 그대로 옮겼습니다(아래 주석 표 참고). 규칙 기반 보고서는 품목별 다음 분기 추정을 하지 않습니다."
+        products_note = "사업의 내용 「매출 및 수주상황」 표를 원문에서 옮겼습니다(아래 표). 규칙 기반 보고서는 품목별 다음 분기 추정을 하지 않습니다."
     else:
         products_note = "원문에서 품목별 매출 표를 찾지 못했습니다."
 
@@ -436,6 +438,7 @@ def build_latest(company: dict, label: str, filing: dict, notes_info: dict | Non
         "products": products,
         "products_note": products_note,
         "checklist": checklist,
+        "note_findings": note_rules.public(findings),
         "notes_status": notes_info.get("status") if notes_info else "not_fetched",
         "notes_missing": notes_info.get("missing", []) if notes_info else [],
     }

@@ -13,7 +13,7 @@
 - `scripts/run.py`: 진입점(check / sync / backfill / analyze / refresh)
 - `scripts/financials.py`: 분기 단독 복원(4Q = 연간 − 3Q 누적)
 - `scripts/analysis.py`: 위험 신호, 회귀 추정, 적중 점검, 보고서 본문(latest)
-- `scripts/note_rules.py`: 저장된 주석에서 숫자로 뽑는 위험 신호(`[주석]` 표시) — 금융보증충당부채, 특수관계자 채권 충당, 상위 고객 비중, 재고 평가충당률, 계속기업 불확실성
+- `scripts/note_rules.py`: 주석을 읽고 판단하는 규칙. 보고서 「주석 점검」(확인 결과+근거 주석 번호)과 `[주석]` 위험 신호를 만들고, 숫자 규칙의 "주석 확인" 질문에 답을 붙임(외환손익 분해 등). 주석 원문은 보고서에 옮기지 않음
 - `scripts/notes.py`: document.xml에서 주석·「매출 및 수주상황」 표 추출. 결과 전체는 `data/notes/{corp_code}_{분기}.json`에 저장
 - `scripts/report.py`: HTML → PDF(headless Chrome, Noto Sans CJK)
 - `scripts/notify.py`: 네이버 SMTP 메일, Issue 본문

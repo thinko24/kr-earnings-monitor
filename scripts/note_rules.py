@@ -1,4 +1,9 @@
-"""주석(data/notes/*.json)에서 숫자로 위험 신호를 뽑는 규칙. Claude 없이 GitHub Actions에서 돈다.
+"""주석(data/notes/*.json)을 읽고 분석 결과를 내는 규칙. Claude 없이 GitHub Actions에서 돈다.
+주석 원문을 보고서에 옮기지 않고, 주석에서 확인한 숫자와 판단(근거 주석 번호 포함)만 남긴다.
+
+note_findings(): 확인 항목 전부(경고가 아닌 '확인 결과'도 info로 포함) → 보고서 「주석 점검」
+note_signals(): 그중 경고(high/mid/low)만 → 위험 신호 목록
+answer_signals(): 숫자 규칙이 "주석 확인"으로 남긴 질문에 주석으로 답함(영업외 손익 → 환산·외환차 분해)
 
 규칙(모두 [주석]으로 시작하는 신호)
 1. 금융보증충당부채: 남의 빚에 대한 보증 손실 예상분. 자본 대비 10% 이상이면 높음
@@ -6,6 +11,7 @@
 3. 매출 상위 고객 1곳 비중(누적): 50% 이상 주의, 30% 이상 참고
 4. 재고 평가충당률(평가충당금 ÷ 취득원가): 50% 이상 높음, 30% 이상 주의, 15% 이상 참고
 5. 계속기업 가정에 대한 중요한 불확실성 언급: 높음
+6. 외환손익 분해(기타·금융 손익 주석): 외화환산손익(비현금)과 외환차손익(실현)
 
 원문 형식이 회사마다 달라 숫자를 못 찾으면 그 규칙은 조용히 건너뛴다(틀린 경고보다 경고 없음이 낫다).
 """
@@ -15,7 +21,7 @@ import re
 
 from common import f1
 
-HIGH, MID, LOW = "high", "mid", "low"
+HIGH, MID, LOW, INFO = "high", "mid", "low", "info"
 
 NUM = re.compile(r"^\(?-?[\d,]+(?:\.\d+)?\)?$")
 CUSTOMER = re.compile(r"^\s*(?:고객\s*[A-Z\d]+|[A-Z]\s*사)(?:\s*\(\*\d+\))?\s*$")
@@ -74,28 +80,37 @@ def _notes(info, cat):
     return [n for n in info.get("all_notes", []) if cat in n.get("categories", [])]
 
 
+def _ref(n) -> str:
+    return f"주석 {n['no']}. {n['title']}"
+
+
+def _f(level, text, refs):
+    refs = [r for r in dict.fromkeys(refs) if r]
+    return {"level": level, "text": text, "ref": ", ".join(refs)}
+
+
 # ── 규칙 ──────────────────────────────────────────────────────
 def guarantee(info, eq):
-    best = None
+    best, ref = None, None
     for n in info.get("all_notes", []):
         for t, div in _table_units(n):
             for r in t:
                 if r and re.search(r"금융\s*보증\s*(충당)?부채", r[0]):
                     v = next((num(c) for c in r[1:] if num(c) is not None), None)
                     if v:
-                        best = max(best or 0, abs(v) / div)
+                        best, ref = max(best or 0, abs(v) / div), _ref(n)
         if best:
             break
     if not best:
-        return None
+        return _f(INFO, "금융보증충당부채: 주석 표에 해당 항목 없음", [])
     share = best / eq * 100 if eq else None
     lvl = HIGH if share is not None and share >= 10 else MID
-    return {"level": lvl, "text": f"[주석] 금융보증충당부채 {f1(best)}억" + (f"(자본의 {share:.1f}%)" if share else "") +
-            " — 다른 회사 빚에 선 보증·담보의 손실 예상분, 실제 유출 시점 확인"}
+    return _f(lvl, f"[주석] 금융보증충당부채 {f1(best)}억" + (f"(자본의 {share:.1f}%)" if share else "") +
+              " — 다른 회사 빚에 선 보증·담보의 손실 예상분, 실제 유출 시점 확인", [ref])
 
 
 def related_allowance(info, eq):
-    amt, full = None, False
+    amt, full, refs = None, False, []
     for n in info.get("all_notes", []):
         if "특수관계자" not in n.get("categories", []) and "특수관계" not in n.get("text", ""):
             continue
@@ -108,16 +123,18 @@ def related_allowance(info, eq):
             m = re.search(r"([\d,]{5,})\s*천원(?:\s*\([^)]*\))?\s*에\s*대하여", sent)
             if m:
                 amt = max(amt or 0, float(m.group(1).replace(",", "")) / 1e5)
+                refs.append(_ref(n))
             elif re.search(r"전액", sent):
                 full = True
+                refs.append(_ref(n))
     if amt:
         share = amt / eq * 100 if eq else None
         lvl = MID if share is not None and share >= 10 else LOW
-        return {"level": lvl, "text": f"[주석] 특수관계자 채권·대여금 손실충당금 {f1(amt)}억" +
-                (f"(자본의 {share:.1f}%)" if share else "") + " — 회수 가능성과 추가 자금 지원 여부 확인"}
+        return _f(lvl, f"[주석] 특수관계자 채권·대여금 손실충당금 {f1(amt)}억" +
+                  (f"(자본의 {share:.1f}%)" if share else "") + " — 회수 가능성과 추가 자금 지원 여부 확인", refs)
     if full:
-        return {"level": LOW, "text": "[주석] 특수관계자 채권·대여금에 전액 손실충당 — 대상·금액을 주석에서 확인"}
-    return None
+        return _f(LOW, "[주석] 특수관계자 채권·대여금에 전액 손실충당 — 대상·금액을 주석에서 확인", refs)
+    return _f(INFO, "특수관계자 채권·대여금 손실충당: 주석에 언급 없음", [])
 
 
 def customer_share(info, ytd):
@@ -129,9 +146,9 @@ def customer_share(info, ytd):
             # ① 행마다 고객: 앞쪽 절반 열이 당기(3개월·누적)
             for r in t:
                 if r and CUSTOMER.match(r[0]):
-                    ns = [num(c) for c in r[1:]]
-                    ns = [x for x in ns if x is not None]
-                    vals += ns[:max(1, (len(ns) + 1) // 2)]
+                    # "-"(그 기간엔 해당 없음)도 자리로 세야 당기 칸 위치가 맞음(조이시티 고객 1)
+                    slots = [c for c in r[1:] if num(c) is not None or c.strip() in ("-", "—", "–")]
+                    vals += [x for x in (num(c) for c in slots[:max(1, (len(slots) + 1) // 2)]) if x is not None]
             # ② 열마다 고객(머리행에 A사·B사…): 바로 다음 숫자 행
             if not vals:
                 for i, r in enumerate(t):
@@ -142,15 +159,15 @@ def customer_share(info, ytd):
             if shares:
                 s = max(shares) * 100
                 if s >= 50:
-                    return {"level": MID, "text": f"[주석] 매출 상위 고객 1곳 비중 {s:.1f}%(누적) — 한 고객 수요에 실적이 좌우됨"}
+                    return _f(MID, f"[주석] 매출 상위 고객 1곳 비중 {s:.1f}%(누적) — 한 고객 수요에 실적이 좌우됨", [_ref(n)])
                 if s >= 30:
-                    return {"level": LOW, "text": f"[주석] 매출 상위 고객 1곳 비중 {s:.1f}%(누적)"}
-                return None
+                    return _f(LOW, f"[주석] 매출 상위 고객 1곳 비중 {s:.1f}%(누적)", [_ref(n)])
+                return _f(INFO, f"매출 상위 고객 1곳 비중 {s:.1f}%(누적) — 30% 미만", [_ref(n)])
     return None
 
 
 def inventory_reserve(info):
-    triples = []
+    triples, ref = [], None
     for n in _notes(info, "재고자산"):
         for t, _ in _table_units(n):
             for r in t:
@@ -161,6 +178,7 @@ def inventory_reserve(info):
                     a, b, c = ns[i:i + 3]
                     if a and b and c is not None and a > 0 and abs(a - abs(b) - c) <= max(1, a * 0.005):
                         triples.append((a, abs(b)))
+                        ref = ref or _ref(n)
     if not triples:
         return None
     a, b = triples[0]
@@ -171,29 +189,122 @@ def inventory_reserve(info):
     if prev is not None and rate - prev >= 10 and lvl in (LOW, MID):
         lvl = {LOW: MID, MID: HIGH}[lvl]
     if not lvl:
-        return None
-    return {"level": lvl, "text": f"[주석] 재고 평가충당률 {rate:.1f}%{chg} — 취득원가의 그만큼이 팔리기 어렵다고 본 금액, 추가 손실 여부 확인"}
+        return _f(INFO, f"재고 평가충당률 {rate:.1f}%{chg} — 15% 미만", [ref])
+    return _f(lvl, f"[주석] 재고 평가충당률 {rate:.1f}%{chg} — 취득원가의 그만큼이 팔리기 어렵다고 본 금액, 추가 손실 여부 확인", [ref])
 
 
 def going_concern(info):
     for n in info.get("all_notes", []):
         txt = n.get("text", "")
         if "계속기업" in txt and re.search(r"중요한\s*불확실성|유의적\s*의문", txt):
-            return {"level": HIGH, "text": f"[주석] 계속기업 가정에 대한 불확실성 언급({n['no']}. {n['title']}) — 주석 원문 확인"}
-    return None
+            return _f(HIGH, f"[주석] 계속기업 가정에 대한 불확실성 언급 — 주석 원문 확인", [_ref(n)])
+    return _f(INFO, "계속기업 불확실성: 언급 없음", [])
 
 
-def note_signals(info: dict | None, quarters: list, label: str) -> list[dict]:
+FX = [("conv", +1, re.compile(r"외화\s*환산\s*이익")), ("conv", -1, re.compile(r"외화\s*환산\s*손실")),
+      ("real", +1, re.compile(r"외환\s*차익")), ("real", -1, re.compile(r"외환\s*차손"))]
+PERIOD_PREV = re.compile(r"^\s*(전분기|전반기|전기|전년)")
+PERIOD_CUR = re.compile(r"^\s*(당분기|당반기|당기)")
+
+
+def fx_breakdown(info):
+    """기타·금융 손익 주석에서 외환손익을 외화환산(비현금)과 외환차(실현)로 나눈다(억 원).
+    행 이름은 첫째 또는 둘째 칸(「기타수익 | 외환차익 | …」), 숫자는 첫 값(3개월 또는 당기).
+    당분기·전분기 표가 따로 있으면 전분기 표는 건너뛴다."""
+    tot = {"conv": 0.0, "real": 0.0}
+    refs, quarterly, seen = [], False, set()
+    for n in _notes(info, "기타손익·금융손익(외환)"):
+        cur = True
+        for t, div in _table_units(n):
+            first = (t[0][0] if t and t[0] else "") or ""
+            if PERIOD_PREV.match(first):
+                cur = False
+            elif PERIOD_CUR.match(first):
+                cur = True
+            if any("3개월" in c for r in t[:4] for c in r):
+                quarterly = True
+            if not cur:
+                continue
+            for r in t:
+                for li in (0, 1):
+                    if li >= len(r):
+                        continue
+                    hit = next(((k, sg) for k, sg, pat in FX if pat.search(r[li])), None)
+                    if not hit:
+                        continue
+                    key = (n["no"], r[li])
+                    v = next((num(c) for c in r[li + 1:] if num(c) is not None), None)
+                    if v is None or key in seen:
+                        break
+                    seen.add(key)
+                    tot[hit[0]] += hit[1] * v / div
+                    refs.append(_ref(n))
+                    break
+    if not refs:
+        return None
+    return {"conv": tot["conv"], "real": tot["real"], "basis": "3개월" if quarterly else "누적", "refs": list(dict.fromkeys(refs))}
+
+
+def fx_finding(info, nonop):
+    fx = fx_breakdown(info)
+    if not fx:
+        return None
+    tot = fx["conv"] + fx["real"]
+    txt = (f"외환손익({fx['basis']}) {f1(tot, sign=True)}억 = 외화환산 {f1(fx['conv'], sign=True)}억(비현금) + "
+           f"외환차 {f1(fx['real'], sign=True)}억(실현)")
+    if nonop is not None and fx["basis"] == "3개월":
+        txt += f" — 영업외 손익 {f1(nonop, sign=True)}억 = 외환 {f1(tot, sign=True)}억 + 그 밖 {f1(nonop - tot, sign=True)}억"
+    return _f(INFO, txt, fx["refs"]) | {"fx": fx}
+
+
+def _nonop(quarters, label):
+    q = next((q for q in quarters if q["q"] == label), None)
+    if not q or q.get("pretax") is None or q.get("op") is None:
+        return None
+    return q["pretax"] - q["op"]
+
+
+def note_findings(info: dict | None, quarters: list, label: str) -> list[dict]:
+    """주석에서 확인한 항목 전부. level: high/mid/low(경고) 또는 info(확인 결과)."""
     if not info or not info.get("all_notes"):
         return []
     eq, ytd = _eq(quarters, label), _ytd_rev(quarters, label)
     out = []
     for rule in (lambda: going_concern(info), lambda: guarantee(info, eq), lambda: related_allowance(info, eq),
-                 lambda: customer_share(info, ytd), lambda: inventory_reserve(info)):
+                 lambda: customer_share(info, ytd), lambda: inventory_reserve(info),
+                 lambda: fx_finding(info, _nonop(quarters, label))):
         try:
             s = rule()
         except Exception:
             s = None
         if s:
             out.append(s)
+    return out
+
+
+def public(findings: list) -> list:
+    """저장·표시용(내부 계산값 제거)."""
+    return [{k: v for k, v in x.items() if k in ("level", "text", "ref")} for x in findings]
+
+
+def note_signals(info: dict | None, quarters: list, label: str, findings: list | None = None) -> list[dict]:
+    fs = findings if findings is not None else note_findings(info, quarters, label)
+    return [{"level": x["level"], "text": x["text"]} for x in fs if x["level"] != INFO]
+
+
+def answer_signals(sig: list, findings: list) -> list:
+    """숫자 규칙이 "주석 확인"으로 남긴 질문에 주석 확인 결과로 답한다."""
+    fx = next((x["fx"] for x in findings if x.get("fx")), None)
+    out = []
+    for x in sig:
+        t = x["text"]
+        if fx and t.startswith("영업외 손익") and "주석 확인" in t:
+            conv, real = fx["conv"], fx["real"]
+            ans = f"주석: 외화환산 {f1(conv, sign=True)}억(비현금)·외환차 {f1(real, sign=True)}억(실현)"
+            if abs(conv) >= abs(real) * 2 and abs(conv) >= 5:
+                ans += " → 대부분 비현금 환산손익"
+            elif abs(real) >= abs(conv) * 2 and abs(real) >= 5:
+                ans += " → 실제 거래에서 난 손익이 큼"
+            x = x | {"text": t.split(" — ")[0] + " — " + ans}
+        out.append(x)
     return out

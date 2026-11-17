@@ -336,7 +336,7 @@ def categorize(title: str) -> list[str]:
 def extract(files: dict[str, bytes], prefer_consolidated: bool = True) -> dict:
     """반환: {status, section, notes, all_notes, sales_tables, missing, diag}
     - all_notes: 주석 섹션의 모든 주석(번호·제목·본문 전체·표 전체·해당 범주)
-    - notes: all_notes 중 TARGETS 범주에 걸린 것(보고서 발췌용, 원본 그대로)
+    - notes: all_notes 중 TARGETS 범주에 걸린 것(원본 그대로, 규칙·Claude 해설이 읽는 용도)
     """
     roots = [r for r in (_parse(b) for n, b in sorted(files.items()) if n.lower().endswith(".xml")) if r is not None]
     if not roots:

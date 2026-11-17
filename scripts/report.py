@@ -10,6 +10,7 @@ from pathlib import Path
 
 from common import REPORTS, f1, period_text, MINUS
 from notes import table_html
+import note_rules
 
 LEVEL_KO = {"high": "위험", "mid": "주의", "low": "참고", "good": "개선"}
 
@@ -31,6 +32,9 @@ th, td { border:1px solid #d5dbe3; padding:3px 5px; text-align:right; }
 th { background:#f1f4f8; text-align:center; }
 td:first-child, th:first-child { text-align:left; }
 table.note td, table.note th { text-align:left; font-size:8.3pt; }
+table.chk td { text-align:left; vertical-align:top; }
+table.chk td:first-child { width:3.2em; white-space:nowrap; text-align:center; }
+table.chk td:last-child { width:30%; }
 .sig { padding:4px 8px; margin:3px 0; border-radius:5px; font-size:9.5pt; }
 .sig.high { background:#fde8e8; } .sig.mid { background:#fff4e0; } .sig.low { background:#f1f4f8; } .sig.good { background:#e6f6ec; }
 .sig b { margin-right:6px; }
@@ -102,6 +106,33 @@ def quarters_table(quarters, n=12) -> str:
     return f"<table>{head}{''.join(body)}</table>{foot}"
 
 
+LEVEL_KO = {"high": "위험", "mid": "주의", "low": "참고", "info": "확인", "good": "개선"}
+
+
+def notes_check_html(company: dict, latest: dict, notes_info: dict | None) -> str:
+    """주석 점검: 주석 원문을 옮기지 않고, 주석을 읽어 확인한 결과와 근거 주석 번호만 보여 준다."""
+    if notes_info and notes_info.get("all_notes"):
+        fs = note_rules.public(note_rules.note_findings(notes_info, company.get("quarters", []), latest.get("label")))
+    else:
+        fs = latest.get("note_findings") or []
+    out = ["<h2>주석 점검</h2>"]
+    if not fs:
+        out.append("<p class='small'>이 보고서는 주석을 읽지 못했습니다(원문 주석 없음).</p>")
+        return "".join(out)
+    total = ((notes_info or {}).get("diag") or {}).get("note_count")
+    out.append("<p class='small'>" + (f"원문 주석 {total}개를 읽어 " if total else "") +
+               "아래 항목을 확인했습니다. 원문은 보고서에 옮기지 않고 저장소 data/notes에 보관합니다.</p>")
+    out.append("<table class='chk'><tr><th>판정</th><th>확인 결과</th><th>근거</th></tr>")
+    for x in fs:
+        out.append(f"<tr><td>{LEVEL_KO.get(x['level'], x['level'])}</td><td>{esc(x['text'].replace('[주석] ', ''))}</td>"
+                   f"<td class='small'>{esc(x.get('ref') or '—')}</td></tr>")
+    out.append("</table>")
+    miss = notes_info.get("missing", []) if notes_info else (latest.get("notes_missing") or [])
+    if miss:
+        out.append(f"<p class='small'>원문에서 찾지 못한 핵심 주석: {esc(', '.join(miss))}</p>")
+    return "".join(out)
+
+
 def render_html(company: dict, latest: dict, notes_info: dict | None = None) -> str:
     name = company["name"]
     src = latest.get("source", "rules")
@@ -158,37 +189,7 @@ def render_html(company: dict, latest: dict, notes_info: dict | None = None) -> 
 
     out.append("<h2 class='page-break'>분기 데이터</h2>" + quarters_table(company["quarters"]))
 
-    if notes_info and notes_info.get("notes"):
-        out.append(f"<h2>주석 발췌 <span class='meta'>({esc(notes_info.get('section') or '')})</span></h2>")
-        nf = latest.get("notes_file")
-        total = (notes_info.get("diag") or {}).get("note_count")
-        if total:
-            out.append(f"<p class='small'>원문 주석 {total}개 중 아래 {len(notes_info['notes'])}개를 발췌했습니다."
-                       + (f" 본문·표 전체는 <code>{esc(nf)}</code>에 저장되어 있습니다." if nf else "") + "</p>")
-        for n in notes_info["notes"]:
-            out.append(f"<h3>[{esc(n['category'])}] {esc(n['title'])}</h3>")
-            # 문서 순서대로(하위 항목 제목 바로 아래 그 표). 글자 2,000자·표 8개까지만 보여 줌
-            blocks = n.get("blocks") or ([{"p": n["text"]}] if n.get("text") else []) + [{"table": t} for t in n.get("tables", [])]
-            chars, tables, cut = 0, 0, False
-            for b in blocks:
-                if "p" in b:
-                    if chars >= 2000:
-                        cut = True
-                        continue
-                    t = b["p"][:2000 - chars]
-                    chars += len(b["p"])
-                    out.append(f"<p class='small'>{esc(t)}{'…' if chars > 2000 else ''}</p>")
-                elif tables < 8:
-                    out.append(table_html(b["table"], max_rows=30))
-                    tables += 1
-                else:
-                    cut = True
-            if cut:
-                out.append("<p class='small'>… 일부 생략(전체는 data/notes 파일)</p>")
-        if notes_info.get("missing"):
-            out.append(f"<p class='small'>찾지 못한 핵심 주석: {esc(', '.join(notes_info['missing']))}</p>")
-    elif latest.get("notes_status") in ("needs_pdf", "not_fetched"):
-        out.append("<p class='small'>주석은 이 보고서에 포함되지 않았습니다.</p>")
+    out.append(notes_check_html(company, latest, notes_info))
 
     out.append("<p class='small' style='margin-top:18px'>이 보고서는 공시 숫자를 규칙에 따라 정리한 참고 자료이며 투자 권유가 아닙니다. "
                "추정치는 과거 분기 숫자만으로 계산했고 신작·수주·일회성 이벤트를 반영하지 않습니다.</p>")
@@ -230,5 +231,5 @@ def write_report(company: dict, latest: dict, notes_info: dict | None = None) ->
     ok = to_pdf(h, p)
     return {"period": latest["period"], "rcept_no": latest.get("rcept_no"),
             "analyzed_at": latest.get("analyzed_at"), "source": latest.get("source", "rules"),
-            "notes_included": bool(notes_info and notes_info.get("notes")),
+            "notes_included": bool(notes_info and notes_info.get("all_notes")),  # 주석을 읽고 점검했는지
             "html": f"reports/{h.name}", "pdf": f"reports/{p.name}" if ok else None}
