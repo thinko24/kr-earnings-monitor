@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관심종목 실적 대시보드</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--sub:#5b6570;--line:#e3e7ec;--blue:#1f4fd8;--red:#c62828;--hi:#fde8e8;--mid:#fff4e0;--low:#f1f4f8;--good:#e6f6ec}
+@media (prefers-color-scheme:dark){:root{--bg:#14171b;--card:#1d2127;--ink:#e8ebef;--sub:#9aa3ad;--line:#2d333b;--blue:#7d9cf5;--red:#ff7b72;--hi:#3a2224;--mid:#3a3020;--low:#252a31;--good:#1f3326}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Pretendard','Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:15px;line-height:1.55}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;flex:1;min-width:180px}
+header .sub{color:var(--sub);font-size:12px;font-weight:400;display:block}
+a{color:var(--blue);text-decoration:none}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:6px 11px;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--blue)}
+main{max-width:1100px;margin:0 auto;padding:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer}
+.card:hover{border-color:var(--blue)}
+.card.archived{opacity:.55}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.name{font-weight:700;font-size:16px}
+.code{color:var(--sub);font-size:12px}
+.nums{display:flex;gap:14px;margin:8px 0 6px;font-size:13px;color:var(--sub)}
+.nums b{color:var(--ink);font-size:15px}
+.neg{color:var(--red)!important}
+.badges span{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;margin-right:4px}
+.b-high{background:var(--hi)}.b-mid{background:var(--mid)}.b-src{background:var(--low);color:var(--sub)}
+.head{font-size:13.5px;margin-top:6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+mark{background:#fff3b0;color:#1b1f24;padding:0 2px}
+.detail{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.detail h2{font-size:20px;margin:0}
+.detail h3{font-size:15px;margin:20px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--blue)}
+.headline{background:var(--low);border-left:4px solid var(--blue);padding:9px 12px;margin:10px 0;border-radius:4px}
+.notice{background:var(--mid);padding:8px 12px;border-radius:6px;font-size:13px;margin:8px 0}
+.sig{padding:5px 9px;margin:4px 0;border-radius:6px;font-size:13.5px}
+.sig.high{background:var(--hi)}.sig.mid{background:var(--mid)}.sig.low{background:var(--low)}.sig.good{background:var(--good)}
+.sig b{margin-right:6px}
+ul{margin:4px 0 4px 20px;padding:0} li{margin:3px 0}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:4px 6px;text-align:right;white-space:nowrap}
+th{background:var(--low)} td:first-child,th:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
+th:first-child{background:var(--low)}
+.small{font-size:12px;color:var(--sub)}
+.tabs{display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap}
+.tabs .btn.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+svg text{fill:var(--sub)}
+.empty{padding:40px;text-align:center;color:var(--sub)}
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="#" style="color:inherit">관심종목 실적 대시보드</a><span class="sub" id="updated">불러오는 중…</span></h1>
+  <a class="btn" id="editLink" target="_blank" rel="noopener">종목 추가·편집</a>
+  <a class="btn" id="runLink" target="_blank" rel="noopener">지금 점검 실행</a>
+</header>
+<main id="app"><div class="empty">불러오는 중…</div></main>
+<script>
+// 저장소 위치: thinko24.github.io/kr-earnings-monitor/ 형태에서 자동으로 계산
+const OWNER = location.hostname.endsWith('github.io') ? location.hostname.split('.')[0] : 'thinko24';
+const REPO = location.hostname.endsWith('github.io') ? (location.pathname.split('/')[1] || 'kr-earnings-monitor') : 'kr-earnings-monitor';
+const GH = `https://github.com/${OWNER}/${REPO}`;
+document.getElementById('editLink').href = `${GH}/edit/main/watchlist.yml`;
+document.getElementById('runLink').href = `${GH}/actions/workflows/monitor.yml`;
+
+const MINUS = '−';
+const f1 = (x, sign=false) => x==null ? '—' : (x<0 ? MINUS : (sign && x>0 ? '+' : '')) + Math.abs(x).toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:1});
+const pct = x => x==null ? '—' : (x<0?MINUS:(x>0?'+':'')) + Math.abs(x).toFixed(1)+'%';
+const esc = s => String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])).replace(/==(.+?)==/g,'<mark>$1</mark>');
+const LV = {high:'위험', mid:'주의', low:'참고', good:'개선'};
+const bust = () => '?t=' + Date.now();
+let INDEX = null;
+
+async function getJSON(p){ const r = await fetch(p + bust()); if(!r.ok) throw new Error(p+' '+r.status); return r.json(); }
+
+async function boot(){
+  try { INDEX = await getJSON('data/index.json'); }
+  catch(e){ document.getElementById('app').innerHTML = '<div class="empty">data/index.json을 읽지 못했습니다. 첫 실행이 끝났는지 확인하세요.</div>'; return; }
+  document.getElementById('updated').textContent = '갱신 ' + (INDEX.updated_at||'').slice(0,16).replace('T',' ') + ' · 단위 억 원';
+  route();
+}
+window.addEventListener('hashchange', route);
+
+function route(){
+  const id = location.hash.slice(1);
+  if(id && /^\d{8}$/.test(id)) showDetail(id); else showList();
+}
+
+function showList(){
+  const cs = INDEX.companies || [];
+  const act = cs.filter(c=>c.status!=='archived'), arc = cs.filter(c=>c.status==='archived');
+  const card = c => c.empty ? `<div class="card"><div class="name">${esc(c.name)}</div><div class="small">데이터 준비 중 — 워크플로 실행 후 표시됩니다</div></div>` : `
+    <div class="card ${c.status==='archived'?'archived':''}" onclick="location.hash='${c.corp_code}'">
+      <div class="row"><span class="name">${esc(c.name)}</span><span class="code">${esc(c.stock_code||'')} · ${esc(c.period||c.last_quarter||'')}</span></div>
+      <div class="nums"><span>매출 <b>${f1(c.rev)}</b></span><span>YoY <b class="${c.rev_yoy<0?'neg':''}">${pct(c.rev_yoy)}</b></span><span>영업이익 <b class="${c.op<0?'neg':''}">${f1(c.op)}</b></span></div>
+      <div class="badges">${c.high?`<span class="b-high">위험 ${c.high}</span>`:''}${c.mid?`<span class="b-mid">주의 ${c.mid}</span>`:''}<span class="b-src">${c.source==='claude'?'Claude 해설':'규칙 기반'}</span></div>
+      <div class="head">${esc(c.headline||'')}</div>
+    </div>`;
+  document.getElementById('app').innerHTML =
+    `<div class="grid">${act.map(card).join('')||'<div class="empty">watchlist.yml에 종목을 추가하세요</div>'}</div>` +
+    (arc.length ? `<h3 class="small" style="margin:22px 0 8px">보관</h3><div class="grid">${arc.map(card).join('')}</div>` : '');
+}
+
+function chart(qs){
+  qs = qs.filter(q=>q.rev!=null).slice(-16);
+  if(qs.length<2) return '';
+  const W=760,H=240,L=48,B=28,T=16;
+  const vals = qs.map(q=>q.rev).concat(qs.map(q=>q.op??0));
+  const vmax = Math.max(...vals)*1.1, vmin = Math.min(0, Math.min(...vals)*1.2);
+  const y = v => T + (vmax-v)/(vmax-vmin)*(H-T-B);
+  const bw = (W-L-8)/qs.length;
+  let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" font-size="11">`;
+  for(let i=0;i<5;i++){ const v=vmin+(vmax-vmin)*i/4; s+=`<line x1="${L}" x2="${W-4}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L-4}" y="${y(v)+4}" text-anchor="end">${Math.round(v).toLocaleString()}</text>`; }
+  s += `<line x1="${L}" x2="${W-4}" y1="${y(0)}" y2="${y(0)}" stroke="var(--sub)"/>`;
+  const pts=[];
+  qs.forEach((q,i)=>{ const x=L+i*bw+bw*.18;
+    s+=`<rect x="${x}" y="${y(q.rev)}" width="${bw*.64}" height="${y(0)-y(q.rev)}" fill="#9db4f0"><title>${q.q} 매출 ${f1(q.rev)}억</title></rect>`;
+    s+=`<text x="${x+bw*.32}" y="${H-10}" text-anchor="middle">${q.q.slice(2,4)}.${q.q.slice(-1)}Q</text>`;
+    if(q.op!=null) pts.push([x+bw*.32, y(q.op), q]); });
+  s += `<polyline fill="none" stroke="#c62828" stroke-width="2" points="${pts.map(p=>p[0]+','+p[1]).join(' ')}"/>`;
+  pts.forEach(p=> s+=`<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="#c62828"><title>${p[2].q} 영업이익 ${f1(p[2].op)}억</title></circle>`);
+  s += `<rect x="${W-200}" y="2" width="10" height="10" fill="#9db4f0"/><text x="${W-186}" y="11">매출</text><line x1="${W-140}" x2="${W-126}" y1="7" y2="7" stroke="#c62828" stroke-width="2"/><text x="${W-122}" y="11">영업이익</text>`;
+  return s + '</svg>';
+}
+
+function qtable(qs){
+  qs = qs.slice(-12);
+  const rows = [['매출','rev'],['영업비용','opex'],['영업이익','op'],['세전이익','pretax'],['순이익','net'],['유동자산','ca'],['유동부채','cl'],['부채총계','tl'],['자본총계','eq'],['현금','cash'],['영업CF(누적)','ocf_ytd']];
+  let h = '<div class="tbl"><table><tr><th>억 원</th>'+qs.map(q=>`<th>${q.q.slice(2)}</th>`).join('')+'</tr>';
+  rows.forEach(([n,k])=>{ if(!qs.some(q=>q[k]!=null)) return; h+=`<tr><td>${n}</td>`+qs.map(q=>`<td class="${q[k]<0?'neg':''}">${f1(q[k])}</td>`).join('')+'</tr>'; });
+  h += '<tr><td>유동비율</td>'+qs.map(q=>`<td>${q.ca&&q.cl?Math.round(q.ca/q.cl*100)+'%':'—'}</td>`).join('')+'</tr>';
+  h += '</table></div>';
+  const notes = qs.filter(q=>q.note && q.note!=='연간−3Q누적').map(q=>`${q.q}: ${esc(q.note)}`);
+  return h + `<p class="small">4분기 = 사업보고서 연간 − 3분기 누적.${notes.length?' '+notes.join(' / '):''}</p>`;
+}
+
+function renderLatest(L, sig){
+  let h = '';
+  if(L.notice) h += `<div class="notice">${esc(L.notice)}</div>`;
+  h += `<div class="headline">${esc(L.headline)}</div>`;
+  const ss = L.signals || sig || [];
+  if(ss.length) h += '<h3>위험 신호 (규칙 점검)</h3>' + ss.map(s=>`<div class="sig ${s.level}"><b>${LV[s.level]||''}</b>${esc(s.text)}</div>`).join('');
+  return h;
+}
+
+function renderSections(L){
+  let h = '';
+  (L.sections||[]).forEach(s=> h += `<h3>${esc(s.title)}</h3><ul>${(s.items||[]).map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`);
+  const fc = L.forecast;
+  if(fc){
+    h += `<h3>다음 분기 추정 (${esc(fc.period)})</h3><div class="tbl"><table><tr><th>항목</th><th>기본안</th><th>범위</th><th>회귀</th><th>비율법</th><th>전년동기법</th></tr>`;
+    (fc.rows||[]).forEach(r=> h+=`<tr><td>${esc(r.item)}</td><td><b>${esc(r.base)}</b></td><td>${esc(r.range)}</td><td>${esc(r.regression)}</td><td>${esc(r.ratio)}</td><td>${esc(r.yoy)}</td></tr>`);
+    h += `</table></div><ul class="small">${(fc.notes||[]).map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`;
+    if(fc.accuracy) h += `<p class="small">추정 점검: ${esc(fc.accuracy)}</p>`;
+  }
+  if((L.products||[]).length){
+    h += '<h3>품목별 매출</h3><div class="tbl"><table><tr><th>품목</th><th>출시·구분</th><th>누적</th><th>분기</th><th>신뢰도</th></tr>' +
+      L.products.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.launch)}</td><td>${esc(p.cum)}</td><td>${esc(p.q)}</td><td>${esc(p.confidence)}</td></tr>`).join('') + '</table></div>';
+  }
+  if(L.products_note) h += `<p class="small">${esc(L.products_note)}</p>`;
+  if((L.checklist||[]).length) h += '<h3>다음에 확인할 것</h3><ul>' + L.checklist.map(c=>`<li>${esc(c)}</li>`).join('') + '</ul>';
+  return h;
+}
+
+async function showDetail(id){
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="empty">불러오는 중…</div>';
+  let c;
+  try { c = await getJSON(`data/${id}.json`); } catch(e){ app.innerHTML = '<div class="empty">데이터가 없습니다.</div>'; return; }
+  const L = c.latest || {};
+  const rc = L.rcept_no;
+  let h = `<div class="detail">
+    <div class="row"><h2>${esc(c.name)} <span class="code">${esc(c.stock_code||'')} · ${c.fs_div==='OFS'?'별도':'연결'}</span></h2><a class="btn" href="#">← 목록</a></div>
+    <div class="small">${esc(L.report_name||'')} · 접수 ${esc(L.rcept_dt||'')} · 분석 ${esc((L.analyzed_at||'').slice(0,16).replace('T',' '))} · ${L.source==='claude'?'Claude 해설':'규칙 기반 자동 분석'}
+    ${rc?` · <a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rc}" target="_blank">DART 원문</a>`:''}</div>`;
+  const tabs = [['now','최신 분석']];
+  if(c.latest_rules) tabs.push(['rules','규칙 점검(최신)']);
+  (c.history||[]).forEach((x,i)=> tabs.push(['h'+i, x.period]));
+  h += `<div class="tabs" style="margin-top:12px">${tabs.map((t,i)=>`<button class="btn ${i?'':'on'}" data-t="${t[0]}">${esc(t[1])}</button>`).join('')}</div><div id="body"></div>`;
+  h += '<h3>분기 추이 (억 원)</h3>' + chart(c.quarters||[]) + qtable(c.quarters||[]);
+  const reps = (c.reports||[]).slice().reverse();
+  if(reps.length) h += '<h3>보고서</h3><ul>' + reps.map(r=>`<li>${esc(r.period)} · ${r.source==='claude'?'Claude 해설':'규칙 기반'}${r.notes_included?' · 주석 포함':''}
+     ${r.pdf?` · <a href="${r.pdf}" target="_blank">PDF</a>`:''}${r.html?` · <a href="${r.html}" target="_blank">웹 보기</a>`:''}${r.note?` <span class="small">(${esc(r.note)})</span>`:''}</li>`).join('') + '</ul>';
+  h += '</div>';
+  app.innerHTML = h;
+  const body = document.getElementById('body');
+  const show = t => {
+    const X = t==='now' ? L : t==='rules' ? c.latest_rules : c.history[+t.slice(1)];
+    body.innerHTML = renderLatest(X, t==='now' ? c.signals : null) + renderSections(X);
+    app.querySelectorAll('.tabs .btn').forEach(b=> b.classList.toggle('on', b.dataset.t===t));
+  };
+  app.querySelectorAll('.tabs .btn').forEach(b=> b.onclick = () => show(b.dataset.t));
+  show('now');
+  window.scrollTo(0,0);
+}
+boot();
+</script>
+</body>
+</html>

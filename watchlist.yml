@@ -1,0 +1,23 @@
+# 관심종목 목록
+# - 회사 이름만 적어도 됩니다. 같은 이름이 여러 개면 stock_code(6자리)를 같이 적어 주세요.
+# - status: active(점검) / archived(보관: 점검하지 않고 대시보드에 회색으로 표시)
+# - 이 파일을 고쳐서 저장(commit)하면 새 종목의 과거 4년치 분기 데이터와 최신 보고서 분석이 자동으로 만들어집니다.
+# - 12월 결산 회사만 지원합니다.
+companies:
+  - name: 조이시티
+    stock_code: "067000"
+    corp_code: "00397252"
+    status: active
+  - name: 아나패스
+    stock_code: "123860"
+    corp_code: "00761952"
+    status: active
+  - name: 월덱스
+    stock_code: "101160"
+    corp_code: "00580065"
+    status: active
+
+# 예시) 새 종목 추가
+#  - name: 삼성전자
+#  - name: 에코프로
+#    stock_code: "086520"

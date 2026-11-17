@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.tmp
+runs/notify.json
+runs/issue.md
+runs/issue_title.txt
+.DS_Store

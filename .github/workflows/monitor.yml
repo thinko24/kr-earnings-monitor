@@ -1,0 +1,105 @@
+name: 실적 점검
+
+on:
+  schedule:
+    # GitHub cron은 UTC 기준. 07:46 KST = 전날 22:46 UTC
+    - cron: "46 22 15,17 5,8,11 *"  # 5·8·11월 16·18일 07:46 KST (분기·반기 마감 다음 날 + 이틀 뒤)
+    - cron: "46 22 31 3 *"          # 4월 1일 07:46 KST (사업보고서 마감 다음 날)
+    - cron: "46 22 2 4 *"           # 4월 3일 07:46 KST
+    - cron: "17 1 1 * *"            # 매월 1일 10:17 KST: 정정·지연 공시 확인 + 저장소 활동 유지(60일 무활동 시 예약 중지 방지)
+  push:
+    branches: [main]
+    paths: [watchlist.yml]          # 종목을 추가하면 과거 데이터 채우기 + 최신 보고서 분석
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check=새 공시 점검 / sync=watchlist 반영 / backfill=과거 데이터 다시 채우기 / analyze=최신 보고서 다시 분석 / refresh=API 없이 다시 계산"
+        type: choice
+        options: [check, sync, backfill, analyze, refresh]
+        default: check
+      corp:
+        description: "한 종목만(회사명·종목코드·고유번호). 비우면 전체"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TZ: Asia/Seoul
+      PAGES_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 한글 글꼴(PDF용)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk >/dev/null
+
+      - name: 점검 실행
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          IN_MODE: ${{ inputs.mode }}
+          IN_CORP: ${{ inputs.corp }}
+        run: |
+          MODE="$IN_MODE"
+          if [ -z "$MODE" ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then MODE=sync; else MODE=check; fi
+          fi
+          echo "mode=$MODE corp=$IN_CORP"
+          if [ -n "$IN_CORP" ]; then python scripts/run.py "$MODE" --corp "$IN_CORP"; else python scripts/run.py "$MODE"; fi
+
+      - name: 결과 저장(commit)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data reports runs/latest.json
+          if git diff --cached --quiet; then echo "변경 없음"; exit 0; fi
+          git commit -m "실적 데이터 갱신 $(date +'%Y-%m-%d %H:%M')"
+          git pull --rebase -q origin main || true
+          git push
+
+      - name: 알림 여부 확인
+        id: n
+        run: |
+          python -c "import json;d=json.load(open('runs/notify.json'));print('send='+('1' if (d['items'] or d['errors']) else '0'))" >> "$GITHUB_OUTPUT"
+
+      - name: GitHub Issue 기록
+        if: steps.n.outputs.send == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create 실적알림 --color 1f4fd8 --force >/dev/null 2>&1 || true
+          gh issue create --title "$(cat runs/issue_title.txt)" --body-file runs/issue.md --label 실적알림
+
+      - name: 네이버 메일 알림
+        if: steps.n.outputs.send == '1'
+        env:
+          NAVER_MAIL_USER: ${{ secrets.NAVER_MAIL_USER }}
+          NAVER_MAIL_PASSWORD: ${{ secrets.NAVER_MAIL_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: python scripts/notify.py
+
+      - name: 실패 알림
+        if: failure()
+        env:
+          NAVER_MAIL_USER: ${{ secrets.NAVER_MAIL_USER }}
+          NAVER_MAIL_PASSWORD: ${{ secrets.NAVER_MAIL_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python scripts/notify.py failure

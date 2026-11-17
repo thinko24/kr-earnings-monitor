@@ -1,0 +1,17 @@
+[
+{"rcept_no":"20261116001656","sj_div":"BS","account_id":"ifrs-full_CurrentAssets","account_nm":"유동 자산","account_detail":"-","thstrm_amount":"40892427575"},
+{"rcept_no":"20261116001656","sj_div":"BS","account_id":"ifrs-full_CashAndCashEquivalents","account_nm":"현금및현금성자산","account_detail":"-","thstrm_amount":"11982008011"},
+{"rcept_no":"20261116001656","sj_div":"BS","account_id":"ifrs-full_Equity","account_nm":"자본총계","account_detail":"-","thstrm_amount":"78315381206"},
+{"rcept_no":"20261116001656","sj_div":"BS","account_id":"ifrs-full_IssuedCapital","account_nm":"자본금","account_detail":"-","thstrm_amount":"35379157500"},
+{"rcept_no":"20261116001656","sj_div":"BS","account_id":"ifrs-full_CurrentLiabilities","account_nm":"유동 부채","account_detail":"-","thstrm_amount":"116094741370"},
+{"rcept_no":"20261116001656","sj_div":"BS","account_id":"ifrs-full_CurrentPortionOfLongtermBorrowings","account_nm":"유동성장기부채","account_detail":"-","thstrm_amount":"60000000000"},
+{"rcept_no":"20261116001656","sj_div":"BS","account_id":"ifrs-full_ShorttermBorrowings","account_nm":"단기금융부채","account_detail":"-","thstrm_amount":"38500000000"},
+{"rcept_no":"20261116001656","sj_div":"BS","account_id":"ifrs-full_Liabilities","account_nm":"부채총계","account_detail":"-","thstrm_amount":"122958712197"},
+{"rcept_no":"20261116001656","sj_div":"CIS","account_id":"dart_OperatingIncomeLoss","account_nm":"영업이익","account_detail":"-","thstrm_amount":"-3210063603","thstrm_add_amount":"-2314553543"},
+{"rcept_no":"20261116001656","sj_div":"CIS","account_id":"dart_TotalSellingGeneralAdministrativeExpenses","account_nm":"판매비와관리비","account_detail":"-","thstrm_amount":"25599490744","thstrm_add_amount":"90548482403"},
+{"rcept_no":"20261116001656","sj_div":"CIS","account_id":"ifrs-full_ProfitLoss","account_nm":"분기순이익(손실)","account_detail":"-","thstrm_amount":"-7018376538","thstrm_add_amount":"-7981031163"},
+{"rcept_no":"20261116001656","sj_div":"CIS","account_id":"ifrs-full_ProfitLossBeforeTax","account_nm":"법인세비용차감전순이익(손실)","account_detail":"-","thstrm_amount":"-6193158724","thstrm_add_amount":"-5637492110"},
+{"rcept_no":"20261116001656","sj_div":"CIS","account_id":"ifrs-full_Revenue","account_nm":"영업수익","account_detail":"-","thstrm_amount":"29566937206","thstrm_add_amount":"110401671527"},
+{"rcept_no":"20261116001656","sj_div":"CF","account_id":"ifrs-full_CashFlowsFromUsedInOperatingActivities","account_nm":"영업활동으로 인한 현금흐름","account_detail":"-","thstrm_amount":"-4024339023"},
+{"rcept_no":"20261116001656","sj_div":"SCE","account_id":"ifrs-full_ProfitLoss","account_nm":"분기순이익(손실)","account_detail":"연결재무제표 [member]","thstrm_amount":"-7018376538"}
+]
