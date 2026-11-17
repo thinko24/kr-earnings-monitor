@@ -88,5 +88,32 @@ check(r["status"] == "extracted" and len(r["all_notes"]) == 2, f"C 별도 주석
 r = notes.extract({"main.xml": doc("<P>1. 일반사항</P>", title="2. 재무제표")})
 check(r["status"] == "no_notes_section", f"D status {r['status']}")
 
+# ── E. 주석 문단이 SECTION 밖에 놓인 원문(아나패스 2026Q3 형식) ─────
+E = ('<?xml version="1.0" encoding="utf-8"?><DOCUMENT><BODY><SECTION-1><TITLE>III. 재무에 관한 사항</TITLE>'
+     '<SECTION-2><TITLE>3. 연결재무제표 주석</TITLE><P>해당사항 없음</P></SECTION-2>'
+     '<SECTION-2><TITLE>5. 재무제표 주석</TITLE></SECTION-2>'
+     '<P>1. 회사의 개요</P><P>설립</P><P>2. 중요한 회계정책</P><P>2.1 작성기준</P>'
+     f'<P>3. 고객과의 계약에서 생기는 수익</P><P>4.1 수익 구분</P>{tbl("수익", 3)}<P>4. 차입금</P>{tbl("차입", 2)}'
+     '<SECTION-2><TITLE>6. 배당에 관한 사항</TITLE><P>1. 배당 없음</P></SECTION-2>'
+     '</SECTION-1></BODY></DOCUMENT>').encode("utf-8")
+r = notes.extract({"main.xml": E}, prefer_consolidated=False)
+check([n["no"] for n in r["all_notes"]] == [1, 2, 3, 4], f"E SECTION 밖 주석 {[n['no'] for n in r['all_notes']]}")
+check(r["section"] == "5. 재무제표 주석", f"E 섹션 {r['section']}")
+
+# ── F. "9-1. 차입금", "9-2. 차입금" 나뉜 제목(월덱스 2026Q3 형식, SECTION-3) ──
+F = doc(
+    "".join(f"<SECTION-3><TITLE>{t}</TITLE>{tbl(t[:2], 2)}</SECTION-3>" for t in
+            ["1. 일반사항 (연결)", "8. 무형자산 (연결)"][:1]) +
+    "".join(f"<SECTION-3><TITLE>{i}. 주석{i} (연결)</TITLE></SECTION-3>" for i in range(2, 9)) +
+    f"<SECTION-3><TITLE>9-1. 차입금 (연결)</TITLE>{tbl('단기', 2)}</SECTION-3>"
+    f"<SECTION-3><TITLE>9-2. 차입금 (연결)</TITLE>{tbl('장기', 3)}</SECTION-3>"
+    f"<SECTION-3><TITLE>10. 순확정급여자산 (연결)</TITLE></SECTION-3>"
+)
+r = notes.extract({"main.xml": F})
+by_no = {n["no"]: n for n in r["all_notes"]}
+check([n["no"] for n in r["all_notes"]] == list(range(1, 11)), f"F 번호 {[n['no'] for n in r['all_notes']]}")
+check(9 in by_no and by_no[9]["title"] == "차입금 (연결)" and len(by_no[9]["tables"]) == 2, "F 9-1·9-2 차입금 합치기")
+check("차입금·사채" not in r["missing"], "F 차입금 범주")
+
 print("OK" if not fails else "실패:\n- " + "\n- ".join(fails))
 sys.exit(1 if fails else 0)

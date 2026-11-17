@@ -12,6 +12,9 @@ DART 원문 XML 구조(요약)
 - "1) 단기차입금", "(1) …", "2.1 작성기준" 같은 하위 항목은 제목이 아니다.
   제목은 "숫자 + 마침표" 형식이어야 하고, 번호가 직전 주석보다 1~3 커야 한다
   (본문 속 "1. 회사의 개요" 같은 번호 문단이 새 주석으로 잘리는 것을 막음).
+- "9-1. 차입금", "9-2. 차입금"처럼 한 주석이 나뉘어 있으면 같은 9번 주석으로 합친다.
+- 주석 범위는 제목(TITLE)의 부모 요소가 아니라 "그 제목부터 같은 수준 이상의 다음 제목 전까지"를
+  문서 순서대로 읽는다. 원문에 따라 주석 문단이 SECTION 밖에 놓이는 경우가 있기 때문(아나패스 2026Q3).
 - 본문·표는 자르지 않고 전부 담는다. 보고서(HTML/PDF)에서만 줄여서 보여 준다.
 XML이 깨진 경우가 있어 lxml recover 모드로 읽는다.
 """
@@ -48,8 +51,8 @@ TARGETS = [
 ]
 CORE = [c for c, _, core in TARGETS if core]
 
-# "17. 차입금", "17.차입금 (연결)". "1) …", "(1) …", "2.1 …"은 제외
-NOTE_HEAD = re.compile(r"^\s*(\d{1,3})\s*\.\s*([^\d\s.][^\n]{0,60})$")
+# "17. 차입금", "17.차입금 (연결)", "9-1. 차입금". "1) …", "(1) …", "2.1 …"은 제외
+NOTE_HEAD = re.compile(r"^\s*(\d{1,3})(?:\s*-\s*(\d{1,2}))?\s*\.\s*([^\d\s.][^\n]{0,60})$")
 HEAD_MAX_LEN = 70
 MAX_GAP = 3            # 제목 번호는 직전 번호 +1 ~ +3 까지만 인정
 # 저장용 안전 상한(비정상 문서 대비). 일반적인 주석은 여기에 걸리지 않는다
@@ -102,10 +105,37 @@ def _table_rows(tbl) -> list[list[str]]:
     return rows
 
 
+def _level(el) -> int:
+    """TITLE이 몇 단계 SECTION 안에 있는지(SECTION-2 → 2). SECTION 밖이면 0."""
+    for a in el.iterancestors():
+        m = re.match(r"SECTION-(\d)", _tag(a))
+        if m:
+            return int(m.group(1))
+    return 0
+
+
+def _range(title_el):
+    """title_el 다음부터 같은 수준 이상의 다음 TITLE 전까지의 요소(문서 순서)."""
+    root = title_el.getroottree().getroot()
+    lv = _level(title_el) or 99
+    started = False
+    for el in root.iter():
+        if el is title_el:
+            started = True
+            continue
+        if not started:
+            continue
+        if _tag(el) == "TITLE" and (_level(el) or 0) <= lv:
+            break
+        yield el
+
+
 def _blocks(section):
-    """섹션 안을 문서 순서대로 (kind, value) 목록으로. kind: p / table / title"""
+    """섹션(요소 또는 TITLE 요소)의 내용을 문서 순서대로 (kind, value) 목록으로. kind: p / table / title
+    TITLE 요소를 넘기면 그 제목의 범위(_range)를 읽는다."""
     out = []
-    for el in section.iter():
+    els = _range(section) if _tag(section) == "TITLE" else section.iter()
+    for el in els:
         tag = _tag(el)
         if tag == "TABLE":
             if _in_table(el):
@@ -126,42 +156,45 @@ def _blocks(section):
 
 
 def _find_sections(root, pattern):
+    """제목이 pattern에 맞는 TITLE 요소들. 내용은 _blocks(TITLE)로 읽는다."""
     for t in root.iter("TITLE"):
         if re.search(pattern, _text(t)):
-            yield t.getparent(), _text(t)
+            yield t, _text(t)
 
 
 def _head(val: str, last_no: int):
-    """제목이면 (번호, 제목), 아니면 None."""
+    """제목이면 (번호, 하위번호, 제목), 아니면 None. "9-2." 처럼 현재 주석의 이어지는 부분이면 하위번호 2."""
     if len(val) > HEAD_MAX_LEN:
         return None
     m = NOTE_HEAD.match(val)
     if not m:
         return None
-    no = int(m.group(1))
+    no, sub = int(m.group(1)), int(m.group(2) or 0)
+    title = m.group(3).strip().rstrip(":：").strip()
+    if sub >= 2 and no == last_no:
+        return no, sub, title          # 같은 주석의 이어지는 부분
     if last_no == 0:
         ok = no <= MAX_GAP          # 첫 주석은 1번 근처
     else:
         ok = last_no < no <= last_no + MAX_GAP
     if not ok:
         return None
-    title = m.group(2).strip().rstrip(":：").strip()
-    return no, title
+    return no, sub, title
 
 
 def split_notes(section) -> list[dict]:
     """주석 섹션을 번호별 덩어리로 나눈다. 반환: [{no,title,text:[..],tables:[..],blocks:[..]}]
     blocks는 문서 순서 그대로의 [{"p": 문단} | {"table": 행 목록}] — 어느 하위 항목의 표인지 알 수 있게"""
     chunks, cur, last_no = [], None, 0
-    title_el = next((c for c in section if _tag(c) == "TITLE"), None)
-    sec_title = _text(title_el) if title_el is not None else ""
     for kind, val in _blocks(section):
         if kind in ("p", "title"):
-            if kind == "title" and val == sec_title:
-                continue
             h = _head(val, last_no)
+            if h and h[1] >= 2 and cur is not None and h[0] == cur["no"]:
+                cur["blocks"].append({"p": val})   # "9-2. 차입금": 같은 주석에 이어 붙임
+                cur["text"].append(val)
+                continue
             if h:
-                cur = {"no": h[0], "title": h[1], "text": [], "tables": [], "blocks": []}
+                cur = {"no": h[0], "title": h[2], "text": [], "tables": [], "blocks": []}
                 chunks.append(cur)
                 last_no = h[0]
                 continue
