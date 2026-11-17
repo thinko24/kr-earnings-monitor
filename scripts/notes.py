@@ -381,7 +381,13 @@ def extract(files: dict[str, bytes], prefer_consolidated: bool = True) -> dict:
                list(_find_sections(r, r"^\s*\d*\.?\s*매출\s*$|주요\s*제품.*매출"))
         if secs:
             s0 = secs[0][0]
-            blocks = _blocks(s0) or (_blocks(s0.getparent()) if s0.getparent() is not None else [])
+            # 표가 하나도 안 나오면 부모 요소 → 깨진 표 풀어 읽기 순으로 다시 시도(아나패스 2026Q3)
+            blocks = []
+            for get in (lambda: _blocks(s0), lambda: _blocks(s0.getparent()) if s0.getparent() is not None else [],
+                        lambda: _blocks(s0, None, tolerant=True)):
+                blocks = get()
+                if any(k == "table" for k, _ in blocks):
+                    break
             for kind, val in blocks:
                 if kind == "table" and len(sales_tables) < 12:
                     sales_tables.append(val)

@@ -1,12 +1,8 @@
 {
- "at": "2026-11-17T15:42:50+09:00",
- "mode": "notes",
+ "at": "2026-11-17T15:49:31+09:00",
+ "mode": "refresh",
  "processed": 0,
  "errors": [],
- "log": [
-  "조이시티: 2026Q3 주석 extracted: 34개 중 대상 19개, 못 찾음 재고자산",
-  "아나패스: 2026Q3 주석 extracted: 33개 중 대상 20개",
-  "월덱스: 2026Q3 주석 extracted: 23개 중 대상 18개"
- ],
- "api_calls": 6
+ "log": [],
+ "api_calls": 0
 }

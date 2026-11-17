@@ -148,5 +148,14 @@ if 2 in by_no:
     check(len(by_no[2]["tables"]) == 2 and len(by_no[2]["tables"][0]) == 5, f"I 안쪽 표 {[len(t) for t in by_no[2]['tables']]}")
     check("단기차입금 내역" in by_no[2]["text"], "I 안쪽 문단")
 
+# ── J. 「매출 및 수주상황」 표가 깨진 표 안에 있는 원문 ──
+J = ('<?xml version="1.0" encoding="utf-8"?><DOCUMENT><BODY><SECTION-1><TITLE>II. 사업의 내용</TITLE>'
+     '<SECTION-2><TITLE>1. 사업의 개요</TITLE><TABLE><TBODY><TR><TD>x</TD></TR>'   # </TABLE> 없음
+     '<SECTION-2><TITLE>4. 매출 및 수주상황</TITLE><P>가. 매출실적</P>' + tbl("OLED", 3) + '</SECTION-2>'
+     '<SECTION-2><TITLE>5. 재무제표 주석</TITLE><P>1. 회사의 개요</P><P>2. 매출채권</P></SECTION-2>'
+     '</SECTION-1></BODY></DOCUMENT>').encode("utf-8")
+r = notes.extract({"main.xml": J}, prefer_consolidated=False)
+check(len(r["sales_tables"]) >= 1 and any("OLED0" in c for row in r["sales_tables"][0] for c in row), f"J 매출 표 {r['sales_tables'][:1]}")
+
 print("OK" if not fails else "실패:\n- " + "\n- ".join(fails))
 sys.exit(1 if fails else 0)
