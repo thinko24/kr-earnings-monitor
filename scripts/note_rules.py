@@ -444,8 +444,10 @@ def sales_summary(mix: dict | None) -> list[str]:
     movers = sorted([r for r in rows if r.get(key) is not None and r["cum"] >= 1], key=lambda r: r[key])
     if movers:
         lo, hi = movers[0], movers[-1]
-        out.append(f"{basis}: 가장 줄어든 품목 {lo['name']} {pct(lo[key])}" +
-                   (f", 가장 늘어난 품목 {hi['name']} {pct(hi[key])}" if hi is not lo else ""))
+        lo_w = "가장 줄어든 품목" if lo[key] < 0 else "가장 적게 늘어난 품목"
+        hi_w = "가장 늘어난 품목" if hi[key] > 0 else "가장 적게 줄어든 품목"
+        out.append(f"{basis}: {lo_w} {lo['name']} {pct(lo[key])}" +
+                   (f", {hi_w} {hi['name']} {pct(hi[key])}" if hi is not lo else ""))
     tot = next((r for r in mix["rows"] if r["name"] == "합계"), None)
     if tot and tot.get(key) is not None:
         out.append(f"전체 {basis} {pct(tot[key])}" + ("" if mix.get("has_yoy") else " — 계절성 무시한 단순 환산"))
