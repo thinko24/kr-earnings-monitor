@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "check=새 공시 점검 / sync=watchlist 반영 / backfill=과거 데이터 다시 채우기 / analyze=최신 보고서 다시 분석 / refresh=API 없이 다시 계산"
+        description: "check=새 공시 점검 / sync=watchlist 반영 / backfill=과거 데이터 다시 채우기 / analyze=최신 보고서 다시 분석 / refresh=API 없이 다시 계산 / mailtest=메일 설정 확인"
         type: choice
-        options: [check, sync, backfill, analyze, refresh]
+        options: [check, sync, backfill, analyze, refresh, mailtest]
         default: check
       corp:
         description: "한 종목만(회사명·종목코드·고유번호). 비우면 전체"
@@ -31,7 +31,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  mailtest:
+    if: inputs.mode == 'mailtest'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 테스트 메일 보내기
+        env:
+          NAVER_MAIL_USER: ${{ secrets.NAVER_MAIL_USER }}
+          NAVER_MAIL_PASSWORD: ${{ secrets.NAVER_MAIL_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: python scripts/notify.py test
+
   run:
+    if: inputs.mode != 'mailtest'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:

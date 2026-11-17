@@ -103,6 +103,11 @@ def send_mail(subject: str, html_body: str, text_body: str) -> bool:
 
 def main():
     """워크플로에서 호출: runs/notify.json을 읽어 메일 발송.  `python notify.py failure`면 실패 알림."""
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        ok = send_mail("[실적 알림] 메일 설정 확인",
+                       "<p>kr-earnings-monitor 메일 알림이 정상적으로 설정되었습니다.</p>",
+                       "kr-earnings-monitor 메일 알림이 정상적으로 설정되었습니다.")
+        sys.exit(0 if ok else 1)
     if len(sys.argv) > 1 and sys.argv[1] == "failure":
         url = os.environ.get("RUN_URL", "")
         send_mail("[실적 알림] 자동 점검 실패",
